@@ -1,0 +1,36 @@
+{
+  "name": "@mstack/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "mstack — the offline demo driver that ties the whole stack into one runnable signal→decision→action loop (seed · demo · review · score · approve · list).",
+  "main": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "bin": {
+    "mstack": "./dist/cli.js"
+  },
+  "exports": {
+    ".": { "types": "./dist/cli.d.ts", "default": "./dist/cli.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "demo": "node dist/cli.js demo",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@mstack/core": "workspace:*",
+    "@mstack/memory": "workspace:*",
+    "@mstack/runtime": "workspace:*",
+    "@mstack/reviewer": "workspace:*",
+    "@mstack/account-intel": "workspace:*",
+    "@mstack/adapters-signals": "workspace:*",
+    "@mstack/adapters-enrichment": "workspace:*",
+    "@mstack/adapters-scoring": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0",
+    "rimraf": "^6.0.1"
+  }
+}
