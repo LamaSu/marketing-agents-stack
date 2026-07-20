@@ -1,8 +1,9 @@
 {
-  "name": "@mstack/reviewer",
+  "name": "@mstack/account-intel",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "description": "Account-Intelligence engine + agent swarm (context engine, scoring noise filter, SDR-Researcher/Copywriter/GTM-Router swarm, draft-first activateAccount).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -17,12 +18,13 @@
   "dependencies": {
     "@mstack/core": "workspace:*",
     "@mstack/agents": "workspace:*",
-    "@lancedb/lancedb": "^0.31.0",
-    "@huggingface/transformers": "^4.2.0",
+    "@mstack/memory": "workspace:*",
+    "@mstack/adapters-signals": "workspace:*",
+    "@mstack/adapters-enrichment": "workspace:*",
+    "@mstack/adapters-scoring": "workspace:*",
     "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "latest",
     "vitest": "^2.1.0",
     "rimraf": "^6.0.1"
   }

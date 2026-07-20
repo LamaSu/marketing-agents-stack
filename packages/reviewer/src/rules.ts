@@ -58,15 +58,39 @@ function group(m: RegExpExecArray, i: number): string {
   return m[i] ?? "";
 }
 
-/** Extracts single- or double-quoted terms from guideline prose, e.g.
- *  "Never use 'guarantee', 'guaranteed'..." -> ["guarantee", "guaranteed"].
- *  Handles the corpus's mixed quoting (double quotes are used for terms that
- *  themselves contain an apostrophe, e.g. "world's best"). */
+/** A lexicon/denylist row states its BANNED terms first, then frequently
+ *  shows the APPROVED phrasing to use *instead* — and that model answer is
+ *  quoted too: gl-lex-superlative-1 ends "...Describe what the solution does
+ *  concretely instead (e.g. 'automates document-heavy workflows across
+ *  finance, legal, and operations')"; gl-lex-guarantee-1 says 'phrase it as
+ *  "customers have reported..."'. Those quoted phrases are the OPPOSITE of a
+ *  violation, so pulling EVERY quote turns the guideline's own recommended
+ *  wording into a banned term — and then flags the CLEAN asset that correctly
+ *  follows the guidance (the fully-cited Northland case study uses that exact
+ *  'automates document-heavy workflows across finance, legal, and operations'
+ *  phrasing the superlative rule RECOMMENDS). `prohibitionClause` restricts
+ *  extraction to the content up to the first positive-guidance cue; rows with
+ *  no such cue (gl-lex-guarantee-2, gl-lex-superlative-2, every denylist row)
+ *  are returned whole, so no real banned term is lost. */
+const POSITIVE_GUIDANCE_CUE = /\binstead\b|\be\.g\.|\bphrase it as\b|\brephrase\b|\breword\b/i;
+
+function prohibitionClause(content: string): string {
+  const m = POSITIVE_GUIDANCE_CUE.exec(content);
+  return m ? content.slice(0, m.index) : content;
+}
+
+/** Extracts single- or double-quoted BANNED terms from a guideline row's
+ *  prohibition clause, e.g. "Never use 'guarantee', 'guaranteed'..." ->
+ *  ["guarantee", "guaranteed"]. Handles the corpus's mixed quoting (double
+ *  quotes are used for terms that themselves contain an apostrophe, e.g.
+ *  "world's best"). Positive "do this instead" example phrasings are NOT
+ *  banned terms and are excluded — see `prohibitionClause`. */
 function extractQuotedTerms(content: string): string[] {
   const terms: string[] = [];
   const re = /'([^']+)'|"([^"]+)"/g;
   let m: RegExpExecArray | null;
-  while ((m = re.exec(content)) !== null) {
+  const clause = prohibitionClause(content);
+  while ((m = re.exec(clause)) !== null) {
     const term = group(m, 1) || group(m, 2);
     if (term) terms.push(term);
   }
