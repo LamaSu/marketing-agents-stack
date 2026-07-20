@@ -1,7 +1,6 @@
-# Heavy media — never commit the source video/audio (research inputs, not code)
-research/source/vod.mp4
-research/source/*.mp3
-research/source/*.wav
+# Research SOURCE inputs — kept local only (not redistributed): source video/audio +
+# the verbatim ASR transcript. Our transformative summaries in research/*.md carry the substance.
+research/source/
 research/slides/**/*.jpg
 research/slides/**/*.png
 
