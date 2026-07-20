@@ -1,0 +1,35 @@
+# Heavy media — never commit the source video/audio (research inputs, not code)
+research/source/vod.mp4
+research/source/*.mp3
+research/source/*.wav
+research/slides/**/*.jpg
+research/slides/**/*.png
+
+# Node
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.turbo/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# State / DB
+*.db
+*.sqlite
+chorus/state/
+.data/
+
+# OS
+.DS_Store
+Thumbs.db
