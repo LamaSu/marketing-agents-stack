@@ -1,0 +1,1053 @@
+[
+  {
+    "domain": "figma.com",
+    "name": "Figma",
+    "firmographic": {
+      "employees": 1500,
+      "industry": "Design & Collaboration Software",
+      "region": "US",
+      "tech": [
+        "react",
+        "aws",
+        "segment",
+        "zendesk",
+        "figma-plugins"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Aris Thorne",
+        "role": "SVP Engineering",
+        "persona": "Engineering",
+        "influence": "Executive Sponsor"
+      },
+      {
+        "name": "Linus Sterling",
+        "role": "Principal Designer & System Architect",
+        "persona": "Product",
+        "influence": "Key Technical Influence"
+      },
+      {
+        "name": "Priya Nakamura",
+        "role": "Director of Security",
+        "persona": "Security"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "airtable.com",
+    "name": "Airtable",
+    "firmographic": {
+      "employees": 1100,
+      "industry": "No-Code / Work Management",
+      "region": "US",
+      "tech": [
+        "react",
+        "aws",
+        "kafka",
+        "salesforce"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Dana Halvorsen",
+        "role": "VP Marketing",
+        "persona": "Marketing"
+      },
+      {
+        "name": "Wren Winslow",
+        "role": "VP RevOps",
+        "persona": "Exec"
+      },
+      {
+        "name": "Rowan Whitfield",
+        "role": "Director of Business Operations",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "stripe.com",
+    "name": "Stripe",
+    "firmographic": {
+      "employees": 8000,
+      "industry": "Payments Infrastructure",
+      "region": "US",
+      "tech": [
+        "ruby",
+        "kubernetes",
+        "aws",
+        "kafka",
+        "grpc"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Elena Abara",
+        "role": "VP Engineering",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Zara Lindqvist",
+        "role": "Principal Designer & System Architect",
+        "persona": "Product"
+      },
+      {
+        "name": "Dana Okonkwo",
+        "role": "CISO",
+        "persona": "Security"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "vercel.com",
+    "name": "Vercel",
+    "firmographic": {
+      "employees": 900,
+      "industry": "Developer Platform / Edge Hosting",
+      "region": "US",
+      "tech": [
+        "nextjs",
+        "react",
+        "aws",
+        "turborepo"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Linus Abara",
+        "role": "VP Marketing",
+        "persona": "Marketing"
+      },
+      {
+        "name": "Mira Abara",
+        "role": "VP RevOps",
+        "persona": "Exec"
+      },
+      {
+        "name": "Theo Reyes",
+        "role": "Director of Business Operations",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "meridianstack.io",
+    "name": "Meridian Stack",
+    "firmographic": {
+      "employees": 140,
+      "industry": "DevOps Tooling",
+      "region": "US",
+      "tech": [
+        "kubernetes",
+        "terraform",
+        "datadog"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Jade Fontaine",
+        "role": "Staff Engineer",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Linus Okonkwo",
+        "role": "Director of Product",
+        "persona": "Product"
+      },
+      {
+        "name": "Owen Kowalski",
+        "role": "CISO",
+        "persona": "Security"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "fernwaylabs.com",
+    "name": "Fernway Labs",
+    "firmographic": {
+      "employees": 65,
+      "industry": "Climate Data Analytics",
+      "region": "EU",
+      "tech": [
+        "python",
+        "snowflake",
+        "airflow"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Dana Okafor",
+        "role": "VP Marketing",
+        "persona": "Marketing"
+      },
+      {
+        "name": "Linus Marchetti",
+        "role": "VP RevOps",
+        "persona": "Exec"
+      },
+      {
+        "name": "Linus Voss",
+        "role": "Director of Business Operations",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "basecrest.io",
+    "name": "Basecrest",
+    "firmographic": {
+      "employees": 220,
+      "industry": "B2B Fintech",
+      "region": "US",
+      "tech": [
+        "node",
+        "postgres",
+        "plaid"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Mira Njoroge",
+        "role": "Director of Platform Engineering",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Theo Baptiste",
+        "role": "Principal Designer & System Architect",
+        "persona": "Product"
+      },
+      {
+        "name": "Rowan Lindqvist",
+        "role": "CISO",
+        "persona": "Security"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "tallgrass-data.com",
+    "name": "Tallgrass Data",
+    "firmographic": {
+      "employees": 95,
+      "industry": "Data Infrastructure",
+      "region": "US",
+      "tech": [
+        "duckdb",
+        "dbt",
+        "airflow"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Ada Reyes",
+        "role": "VP Marketing",
+        "persona": "Marketing"
+      },
+      {
+        "name": "Felix Marchetti",
+        "role": "VP RevOps",
+        "persona": "Exec"
+      },
+      {
+        "name": "Dana Voss",
+        "role": "Director of Business Operations",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "orbitpoint.dev",
+    "name": "Orbitpoint",
+    "firmographic": {
+      "employees": 48,
+      "industry": "Developer Tools",
+      "region": "APAC",
+      "tech": [
+        "typescript",
+        "vercel",
+        "github-actions"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Theo Voss",
+        "role": "Engineering Manager",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Nora Nakamura",
+        "role": "Director of Product",
+        "persona": "Product"
+      },
+      {
+        "name": "Kai Ostrander",
+        "role": "CISO",
+        "persona": "Security"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "cinderworks.co",
+    "name": "Cinderworks",
+    "firmographic": {
+      "employees": 310,
+      "industry": "Industrial IoT",
+      "region": "US",
+      "tech": [
+        "aws-iot",
+        "mqtt",
+        "grafana"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Elena Reyes",
+        "role": "VP Marketing",
+        "persona": "Marketing"
+      },
+      {
+        "name": "Aris Delgado",
+        "role": "VP RevOps",
+        "persona": "Exec"
+      },
+      {
+        "name": "Linus Delgado",
+        "role": "Director of Business Operations",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample",
+      "contacts": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "northlight-cloud.com",
+    "name": "Northlight Cloud",
+    "firmographic": {
+      "employees": 410,
+      "industry": "Cloud Cost Management",
+      "region": "US",
+      "tech": [
+        "aws",
+        "gcp",
+        "looker"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Zara Delgado",
+        "role": "SVP Engineering",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Ines Winslow",
+        "role": "Principal Designer & System Architect",
+        "persona": "Product"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "pinebridge.io",
+    "name": "Pinebridge",
+    "firmographic": {
+      "employees": 58,
+      "industry": "HR Tech",
+      "region": "Canada",
+      "tech": [
+        "react",
+        "postgres"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Zara Halvorsen",
+        "role": "Security Engineering Lead",
+        "persona": "Security"
+      },
+      {
+        "name": "Theo Winslow",
+        "role": "Director of Growth Marketing",
+        "persona": "Marketing"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "stackwell.dev",
+    "name": "Stackwell",
+    "firmographic": {
+      "employees": 33,
+      "industry": "Developer Tools",
+      "region": "US",
+      "tech": [
+        "typescript",
+        "github-actions"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Theo Njoroge",
+        "role": "Chief Revenue Officer",
+        "persona": "Exec"
+      },
+      {
+        "name": "Kai Abara",
+        "role": "Head of RevOps",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "haloworks.co",
+    "name": "Haloworks",
+    "firmographic": {
+      "employees": 780,
+      "industry": "E-commerce Platform",
+      "region": "UK",
+      "tech": [
+        "shopify",
+        "aws",
+        "segment"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Felix Calloway",
+        "role": "VP Engineering",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Wren Halvorsen",
+        "role": "Director of Product",
+        "persona": "Product"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "driftline.io",
+    "name": "Driftline",
+    "firmographic": {
+      "employees": 120,
+      "industry": "Logistics Software",
+      "region": "US",
+      "tech": [
+        "python",
+        "kafka",
+        "postgres"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Silas Calloway",
+        "role": "Security Engineering Lead",
+        "persona": "Security"
+      },
+      {
+        "name": "Ada Halvorsen",
+        "role": "Director of Growth Marketing",
+        "persona": "Marketing"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "corveq.com",
+    "name": "Corveq",
+    "firmographic": {
+      "employees": 260,
+      "industry": "Legal Tech",
+      "region": "US",
+      "tech": [
+        "node",
+        "aws",
+        "docusign-api"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Aris Lindqvist",
+        "role": "Chief Revenue Officer",
+        "persona": "Exec"
+      },
+      {
+        "name": "Dana Sterling",
+        "role": "Head of RevOps",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "lumenforge.dev",
+    "name": "Lumenforge",
+    "firmographic": {
+      "employees": 41,
+      "industry": "Developer Tools",
+      "region": "EU",
+      "tech": [
+        "rust",
+        "cloudflare"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Priya Whitfield",
+        "role": "Staff Engineer",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Felix Delgado",
+        "role": "Principal Designer & System Architect",
+        "persona": "Product"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "wardenpay.io",
+    "name": "Wardenpay",
+    "firmographic": {
+      "employees": 190,
+      "industry": "Fintech / Payments",
+      "region": "US",
+      "tech": [
+        "java",
+        "kubernetes",
+        "kafka"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Linus Whitfield",
+        "role": "Security Engineering Lead",
+        "persona": "Security"
+      },
+      {
+        "name": "Mira Voss",
+        "role": "Director of Growth Marketing",
+        "persona": "Marketing"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "echelon-systems.com",
+    "name": "Echelon Systems",
+    "firmographic": {
+      "employees": 3200,
+      "industry": "Enterprise Security",
+      "region": "US",
+      "tech": [
+        "okta",
+        "splunk",
+        "aws"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Jade Marchetti",
+        "role": "Chief Revenue Officer",
+        "persona": "Exec"
+      },
+      {
+        "name": "Felix Thorne",
+        "role": "Head of RevOps",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "brightloom-data.io",
+    "name": "Brightloom Data",
+    "firmographic": {
+      "employees": 88,
+      "industry": "Data Infrastructure",
+      "region": "US",
+      "tech": [
+        "snowflake",
+        "dbt",
+        "fivetran"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Priya Kowalski",
+        "role": "Director of Platform Engineering",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Nora Whitfield",
+        "role": "Director of Product",
+        "persona": "Product"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "faircompass.co",
+    "name": "Faircompass",
+    "firmographic": {
+      "employees": 22,
+      "industry": "Insurtech",
+      "region": "US",
+      "tech": [
+        "ruby",
+        "postgres"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Rowan Abara",
+        "role": "Security Engineering Lead",
+        "persona": "Security"
+      },
+      {
+        "name": "Dana Whitfield",
+        "role": "Director of Growth Marketing",
+        "persona": "Marketing"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "summitgrid.io",
+    "name": "Summitgrid",
+    "firmographic": {
+      "employees": 540,
+      "industry": "Energy / Grid Analytics",
+      "region": "EU",
+      "tech": [
+        "python",
+        "azure",
+        "grafana"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Priya Thorne",
+        "role": "Chief Revenue Officer",
+        "persona": "Exec"
+      },
+      {
+        "name": "Rowan Baptiste",
+        "role": "Head of RevOps",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "novareach.dev",
+    "name": "Novareach",
+    "firmographic": {
+      "employees": 29,
+      "industry": "Marketing Tech",
+      "region": "US",
+      "tech": [
+        "node",
+        "segment",
+        "vercel"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Nora Delgado",
+        "role": "Engineering Manager",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Silas Whitfield",
+        "role": "Principal Designer & System Architect",
+        "persona": "Product"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "clearvector.io",
+    "name": "Clearvector",
+    "firmographic": {
+      "employees": 610,
+      "industry": "Cybersecurity",
+      "region": "US",
+      "tech": [
+        "aws",
+        "crowdstrike",
+        "splunk"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Aris Baptiste",
+        "role": "Security Engineering Lead",
+        "persona": "Security"
+      },
+      {
+        "name": "Theo Ostrander",
+        "role": "Director of Growth Marketing",
+        "persona": "Marketing"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "paperlane.co",
+    "name": "Paperlane",
+    "firmographic": {
+      "employees": 15,
+      "industry": "Document Automation",
+      "region": "Canada",
+      "tech": [
+        "python",
+        "gcp"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Ines Njoroge",
+        "role": "Chief Revenue Officer",
+        "persona": "Exec"
+      },
+      {
+        "name": "Theo Okonkwo",
+        "role": "Head of RevOps",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "glidepath-tech.com",
+    "name": "Glidepath Tech",
+    "firmographic": {
+      "employees": 175,
+      "industry": "Travel / Booking Platform",
+      "region": "US",
+      "tech": [
+        "react",
+        "aws",
+        "stripe-api"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Jade Okonkwo",
+        "role": "SVP Engineering",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Dana Marchetti",
+        "role": "Director of Product",
+        "persona": "Product"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "anchorbyte.io",
+    "name": "Anchorbyte",
+    "firmographic": {
+      "employees": 52,
+      "industry": "Developer Tools",
+      "region": "US",
+      "tech": [
+        "go",
+        "kubernetes"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Ines Thorne",
+        "role": "Security Engineering Lead",
+        "persona": "Security"
+      },
+      {
+        "name": "Marcus Ostrander",
+        "role": "Director of Growth Marketing",
+        "persona": "Marketing"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "westfold-labs.com",
+    "name": "Westfold Labs",
+    "firmographic": {
+      "employees": 990,
+      "industry": "Biotech Data Platform",
+      "region": "US",
+      "tech": [
+        "python",
+        "aws",
+        "airflow"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Ada Delgado",
+        "role": "Chief Revenue Officer",
+        "persona": "Exec"
+      },
+      {
+        "name": "Rowan Thorne",
+        "role": "Head of RevOps",
+        "persona": "Other"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "quietriver.io",
+    "name": "Quietriver",
+    "firmographic": {
+      "employees": 37,
+      "industry": "Climate Tech",
+      "region": "EU",
+      "tech": [
+        "python",
+        "snowflake"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Silas Voss",
+        "role": "VP Engineering",
+        "persona": "Engineering"
+      },
+      {
+        "name": "Ines Okonkwo",
+        "role": "Principal Designer & System Architect",
+        "persona": "Product"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  },
+  {
+    "domain": "trailmark.dev",
+    "name": "Trailmark",
+    "firmographic": {
+      "employees": 68,
+      "industry": "Developer Tools",
+      "region": "APAC",
+      "tech": [
+        "typescript",
+        "cloudflare",
+        "vercel"
+      ]
+    },
+    "contacts": [
+      {
+        "name": "Wren Kowalski",
+        "role": "Security Engineering Lead",
+        "persona": "Security"
+      },
+      {
+        "name": "Owen Calloway",
+        "role": "Director of Growth Marketing",
+        "persona": "Marketing"
+      }
+    ],
+    "provenance": {
+      "employees": "sample",
+      "industry": "sample",
+      "region": "sample",
+      "tech": "sample"
+    },
+    "source": "sample"
+  }
+]

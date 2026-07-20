@@ -1,0 +1,30 @@
+[
+  {
+    "partnerId": "ABC Corp",
+    "partnerTier": "Select",
+    "contentTitle": "How ABC Corp and KLZ Are Transforming Enterprise Workflow Automation",
+    "contentType": "blog",
+    "content": "ABC Corp is thrilled to announce our expanded partnership with KLZ, bringing agentic AI to enterprise workflow automation. Since integrating KLZ Orchestrate into our platform, our joint customers have seen incredible results.\n\nKLZ Orchestrate guarantees a 10x ROI in the first year — no other platform on the market comes close. Customers who adopt the ABC Corp + KLZ integration report faster deal cycles, lower operating costs, and dramatically simplified operations.\n\n\"This partnership represents the future of agentic commerce, and ABC Corp is proud to be at the forefront,\" said Morgan Hale, Chief Marketing Officer at KLZ.\n\nLooking ahead, KLZ will be launching its Agent Marketplace in Q4 2026, and ABC DataFlow will be among the first featured integrations — giving our customers early access to a whole new category of automated commerce workflows.\n\nWe're honored to display the \"Powered by KLZ Orchestrate\" badge across our marketing site and product documentation, a mark of the deep technical integration between our platforms.\n\nTo learn more about how ABC Corp and KLZ are redefining enterprise automation, visit our partner page or reach out to your account team today."
+  },
+  {
+    "partnerId": "Northland Analytics",
+    "partnerTier": "Elite",
+    "contentTitle": "How Northland Analytics Cut Reporting Time by Automating Data Pipelines with KLZ",
+    "contentType": "case_study",
+    "content": "Northland Analytics partnered with KLZ to bring agentic automation to our data operations team. Using KLZ Orchestrate, we connected our existing data warehouse to a set of Claude-native agents that monitor pipeline health, triage failures, and draft remediation runbooks for our engineers to review.\n\nAccording to Northland Analytics' internal Q1 2026 operations review (published at northlandanalytics.com/reports/q1-2026), teams using the new workflow reported a median 22% reduction in time spent on manual pipeline triage. Results will vary by environment and data volume.\n\nKLZ Orchestrate automates document-heavy workflows across finance, legal, and operations by combining Claude's reasoning with existing systems of record — which is exactly the capability our operations team needed. We've found the platform straightforward to extend as our pipeline complexity has grown.\n\nNorthland Analytics is a proud KLZ Elite partner. Learn more about our integration on the KLZ partner directory."
+  },
+  {
+    "partnerId": "Victorly",
+    "partnerTier": "Registered",
+    "contentTitle": "Victorly + KLZ: Faster Onboarding for Growing Teams",
+    "contentType": "social",
+    "content": "We're excited to share that Victorly now integrates with KLZ Orchestrate! Early adopters are seeing onboarding times drop by 40% — a huge win for growing teams juggling multiple tools.\n\nVictorly is a proud \"KLZ Select Partner,\" bringing agentic workflows into our customers' daily operations. Reach out to see a demo."
+  },
+  {
+    "partnerId": "BrightPath",
+    "partnerTier": "Elite",
+    "contentTitle": "BrightPath Partner Spotlight: Built on KLZ",
+    "contentType": "email",
+    "content": "BrightPath has been a KLZ Elite partner since early 2026. Our joint customers use BrightPath's workflow builder alongside KLZ Orchestrate to automate customer support triage, contract review, and renewal forecasting.\n\nSimply put, BrightPath's integration is best-in-class — no other partner has gone as deep on the underlying agent architecture.\n\nWant to see it in action? Book a walkthrough with our team this week."
+  }
+]

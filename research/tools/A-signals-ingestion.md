@@ -6,20 +6,15 @@
 > Goal: a drop-in OSS alternative to closed SaaS (Common Room, Segment, Unify,
 > ZoomInfo intent) that **runs offline with a bundled sample dataset** and
 > **optionally connects real sources** through a clean TS adapter interface.
-> Author: researcher agent · Date: 2026-07-20
+> Author: researcher agent · Date: 2026-07-20 · All licenses verified via GitHub API.
 
 ## Progress tracker
-- [x] RudderStack — license + self-host
-- [x] Jitsu — license + self-host
-- [x] Snowplow — license (SLULA) + OpenSnowcat fork
-- [x] Grouparoo — reverse-ETL status (dead)
-- [x] PostHog — license + self-host + product analytics
-- [x] Open reverse-ETL alternatives (post-Grouparoo) — Multiwoven, Airbyte
-- [x] Open intent / signal sources (Common Room alt, GitHub/community signals)
-- [x] crowd.dev / Orbit status (OSS community-signal)
-- [x] Warehouse-native / webhook capture patterns + Segment HTTP spec
-- [x] TS adapter interface design
-- [x] Final DEFAULT recommendation + packages to install
+- [x] RudderStack · Jitsu · Snowplow · Grouparoo · PostHog
+- [x] Open reverse-ETL (Multiwoven, Airbyte) · open intent sources
+- [x] crowd.dev / LFX CDP (the OSS Common Room analog)
+- [x] Segment HTTP spec + webhook/warehouse capture pattern
+- [x] TS `SignalSource` adapter interface design
+- [x] Final DEFAULT + verified packages to install
 
 ---
 
@@ -39,170 +34,290 @@ real adapters that speak **stable, permissively-licensed contracts**:
 2. **PostHog (MIT)** read adapter — the product-usage signal, purpose-built.
 3. **Public GitHub / HN / Reddit** pull adapters — the open, free replacement for
    the *ingestion* half of Common Room / ZoomInfo intent (the proprietary half is
-   identity enrichment, which stays a pluggable commercial slot).
+   identity enrichment, which stays a pluggable commercial slot). If a user wants a
+   turnkey OSS community-signal engine, point them at **LFX CDP (crowd.dev,
+   Apache-2.0)**.
 
-Concrete packages to install: see the final section. TL;DR:
-`@segment/analytics-node` (spec + types, MIT), `posthog-node` (MIT), `zod` (schema
-validation for the adapter contract). Everything else is a documented
-"bring-your-own" real connector, not a bundled dependency.
+**Verified packages to install (all MIT):** `zod`, `posthog-node`, `@octokit/rest`.
+Details + rationale in the final section.
 
 ---
 
 ## Tool-by-tool findings
 
-### RudderStack — source-available CDP (Segment alternative)
-- **What it does**: Warehouse-native customer data platform. Collects events via
-  SDKs/HTTP, transforms, routes to warehouses + 200+ destinations. The "Segment
-  alternative for data engineers." Go (`rudder-server`) + React.
-- **License**: **Elastic License 2.0 (ELv2)** on `rudder-server` + the self-hosted
-  project — **source-available, NOT OSI open source** (ELv2 forbids offering it as
-  a managed service to third parties). Earlier: AGPL-3.0 core + MIT SDKs. SDKs and
-  many integrations remain permissive.
-- **Self-hostable?**: Yes (Docker/Helm), same core for Community + Enterprise, but
-  wants Postgres + a warehouse; operationally non-trivial.
-- **Maturity**: High. v1.0 with 170+ contributors, widely deployed, active.
-- **How it plugs in as a signal source**: Its SDKs/HTTP speak the **Segment spec**.
-  Point a RudderStack "webhook" destination at our runtime → our adapter parses the
-  Segment-shaped JSON. We target the spec, not the product.
+### RudderStack — source-available CDP (Segment alternative) — SKIP-as-dep
+- **What**: Warehouse-native CDP. Events via SDK/HTTP → transform → warehouse +
+  200+ destinations. "Segment alternative for data engineers." Go + React.
+- **License**: **Elastic License 2.0 (ELv2)** on `rudder-server` + self-hosted
+  project — **source-available, NOT OSI open source** (bars managed-service resale).
+  Earlier AGPL-3.0 core + MIT SDKs. SDKs/many integrations still permissive.
+- **Self-hostable?**: Yes (Docker/Helm), same core Community + Enterprise; wants
+  Postgres + a warehouse; operationally non-trivial.
+- **Maturity**: High — v1.0, 170+ contributors, widely deployed, active.
+- **Plug-in**: SDKs/HTTP speak the **Segment spec**; a RudderStack "webhook"
+  destination → our adapter parses Segment-shaped JSON. We target the spec.
 - **Verdict**: **SKIP as a bundled dependency** (ELv2 + heavy). **EXTEND-compatible**
-  — accept its Segment-shaped webhook output as one real connector.
-- Sources: https://github.com/rudderlabs/rudder-server ·
-  https://www.rudderstack.com/docs/get-started/rudderstack-open-source/ ·
+  — accept its Segment-shaped webhook as one real connector.
+- Src: https://github.com/rudderlabs/rudder-server ·
   https://www.rudderstack.com/blog/rudderstacks-licensing-explained/
 
-### Jitsu — MIT open-source data collection (Segment alternative)
-- **What it does**: Open-source, fully-scriptable event ingestion engine. Captures
-  events (JS SDK / HTTP API), lightweight JS transforms, routes to warehouses
-  (Snowflake, BigQuery, Redshift, Postgres, MySQL, ClickHouse). Jitsu 2.0 is current.
-- **License**: **MIT** — genuinely OSI open source. The key differentiator vs
+### Jitsu — MIT event ingestion (Segment alternative) — ADOPT-as-optional
+- **What**: OSS, fully-scriptable event ingestion. Events (JS SDK / HTTP) →
+  lightweight JS transforms → warehouses (Snowflake/BigQuery/Redshift/Postgres/
+  MySQL/ClickHouse). Jitsu 2.0 current.
+- **License**: **MIT** — genuinely OSI open source. Key differentiator vs
   RudderStack/Snowplow.
-- **Self-hostable?**: Yes — designed for it; fastest path Docker Compose. Cloud tier
-  free to 200k events/mo with bundled ClickHouse.
-- **Maturity**: Medium-high. Active, Segment-compatible SDKs; smaller community than
-  Snowplow/RudderStack but MIT + self-host-friendly.
-- **How it plugs in as a signal source**: (a) run Jitsu, use its Segment-compatible
-  ingestion, forward to our webhook; or (b) skip running it and just adopt its
-  **Segment-compatible event shape** as our wire format. `@jitsu/js` on npm.
-- **Verdict**: **ADOPT as the recommended optional real connector / model our wire
-  format on it.** Best-licensed CDP-class tool. Still too heavy to *bundle* for
-  offline v1, but the one to recommend for a full self-hosted pipeline.
-- Sources: https://github.com/jitsucom/jitsu · https://jitsu.com/ ·
-  https://next.jitsu.com/features/segment-compatibility
+- **Self-hostable?**: Yes — Docker Compose. Cloud free to 200k events/mo w/ bundled
+  ClickHouse.
+- **Maturity**: Medium-high; active, Segment-compatible SDKs; smaller community.
+- **Plug-in**: (a) run Jitsu, use Segment-compatible ingestion, forward to our
+  webhook; or (b) adopt its **Segment-compatible event shape** as our wire format.
+- **Verdict**: **ADOPT as the recommended optional real connector.** Best-licensed
+  CDP-class tool; too heavy to *bundle* for offline v1, but the one to recommend for
+  a full self-hosted pipeline.
+- Src: https://github.com/jitsucom/jitsu · https://next.jitsu.com/features/segment-compatibility
 
-### Snowplow — source-available behavioral data platform
-- **What it does**: The most mature behavioral-data pipeline. Rich strongly-typed
-  event schemas (self-describing JSON + Iglu schema registry), collector → enrich →
-  warehouse. Gold standard for behavioral event modeling.
-- **License**: **Snowplow Limited Use License Agreement (SLULA)** since Jan 2024
-  (v1.1 Dec 2024) — **source-available, NOT open source**; test/academic/
-  non-production only, **production/commercial requires a paid license**. Was
-  Apache-2.0.
-- **Open fork**: **OpenSnowcat** — Apache-2.0 fork of pre-SLULA Snowplow, compatible
-  with Snowplow + Segment SDKs (SnowcatCloud). The genuinely-open path.
-- **Self-hostable?**: Snowplow — technically yes, but SLULA bars production
-  self-host without a license. OpenSnowcat — yes, Apache-2.0, unrestricted.
-- **Maturity**: Very high (Snowplow); OpenSnowcat newer but tracks a mature base.
-- **How it plugs in**: Emits enriched events to a stream/warehouse; our adapter
-  reads that sink. Heavy for our use case.
-- **Verdict**: **SKIP for v1** (over-engineered for a marketing-signal demo; SLULA on
-  the main line). If a user already runs it, provide a warehouse-read adapter. Note
+### Snowplow — source-available behavioral platform — SKIP (OpenSnowcat = escape hatch)
+- **What**: Most mature behavioral pipeline. Strongly-typed self-describing-JSON
+  events + Iglu schema registry; collector → enrich → warehouse. Gold standard for
+  event modeling.
+- **License**: **SLULA** since Jan 2024 (v1.1 Dec 2024) — **source-available**;
+  test/academic/non-production only, **production/commercial needs a paid license**.
+  Was Apache-2.0.
+- **Open fork**: **OpenSnowcat** — Apache-2.0 fork of pre-SLULA Snowplow, Snowplow +
+  Segment SDK compatible (SnowcatCloud). The genuinely-open path.
+- **Self-hostable?**: Snowplow — SLULA bars production self-host w/o license.
+  OpenSnowcat — yes, Apache-2.0, unrestricted.
+- **Maturity**: Very high (Snowplow); OpenSnowcat newer, tracks a mature base.
+- **Verdict**: **SKIP for v1** (over-engineered for a marketing-signal demo; SLULA
+  on the main line). Warehouse-read adapter if a user already runs it. Note
   OpenSnowcat as the Apache-2.0 escape hatch.
-- Sources: https://docs.snowplow.io/docs/resources/limited-use-license-faq/ ·
-  https://snowplow.io/blog/introducing-snowplow-limited-use-license ·
+- Src: https://docs.snowplow.io/docs/resources/limited-use-license-faq/ ·
   https://www.snowcatcloud.com/snowplow/open-source/
 
-### PostHog — MIT product analytics + CDP (self-hostable)
-- **What it does**: All-in-one product analytics — event analytics, session replay,
-  feature flags, experiments, surveys, error tracking, a data-warehouse, AND a
-  CDP/pipelines layer. Captures product-usage events via `posthog-js`/`posthog-node`
-  or HTTP `/capture`. This IS Guan's **"product usage"** signal out of the box.
-- **License**: **MIT ("MIT Expat")** for everything outside `ee/`. The `ee/` dir
-  (SSO enforcement, advanced RBAC, audit logs, some enterprise analytics, billing)
-  is under the PostHog Enterprise License. **`PostHog/posthog-foss`** is a clean
-  fully-MIT mirror with proprietary code stripped.
-- **Self-hostable?**: Yes — free Docker Compose "hobby deploy," documented **~100k
-  events/mo**; PostHog doesn't support OSS deploys and steers big users to Cloud.
-  Fine for demo/dev; not high scale.
-- **Maturity**: Very high. Large active project, first-class SDKs, MCP server,
-  generous free cloud tier (1M events/mo).
-- **How it plugs in as a signal source**: (a) **read adapter** — poll
-  `/api/projects/:id/events` or `/query` (HogQL) with a personal API key → normalize
-  to our Signal shape; (b) **push** — PostHog CDP can webhook-forward events. Event
-  JSON is easy to fixture for offline. `posthog-node` on npm.
-- **Verdict**: **ADOPT as the product-usage connector** (optional, real). MIT +
-  purpose-built. Not bundled into the offline core (needs its own stack), but the
-  highest-value real adapter to ship first.
-- Sources: https://github.com/PostHog/posthog · https://posthog.com/docs/self-host ·
-  https://github.com/PostHog/posthog-foss ·
-  https://github.com/PostHog/posthog/blob/master/LICENSE
+### PostHog — MIT product analytics + CDP — ADOPT (first real connector)
+- **What**: All-in-one product analytics — event analytics, session replay, feature
+  flags, experiments, surveys, error tracking, a data-warehouse, AND a CDP/pipelines
+  layer. `posthog-js`/`posthog-node`/HTTP `/capture`. This IS Guan's **"product
+  usage"** signal out of the box.
+- **License**: **MIT ("MIT Expat")** outside `ee/`. `ee/` (SSO enforcement, advanced
+  RBAC, audit logs, some enterprise analytics, billing) = PostHog Enterprise License.
+  **`PostHog/posthog-foss`** = clean fully-MIT mirror. `posthog-node` verified **MIT**.
+- **Self-hostable?**: Yes — free Docker Compose "hobby deploy," **~100k events/mo**;
+  no OSS support, big users steered to Cloud. Fine for demo/dev.
+- **Maturity**: Very high — large active project, first-class SDKs, MCP server, free
+  cloud tier (1M events/mo).
+- **Plug-in**: (a) **read adapter** — poll `/api/projects/:id/events` or `/query`
+  (HogQL) with a personal API key → normalize; (b) **push** — PostHog CDP
+  webhook-forward. Event JSON trivially fixtured for offline.
+- **Verdict**: **ADOPT as the product-usage connector.** MIT + purpose-built;
+  highest-value real adapter to ship first. Not bundled in the offline core.
+- Src: https://github.com/PostHog/posthog · https://posthog.com/docs/self-host ·
+  https://github.com/PostHog/posthog-foss
 
-### Grouparoo — reverse-ETL (DEAD / archived)
-- **What it did**: Open-source reverse-ETL / data-sync (warehouse → systems of
-  action), OSS alternative to Hightouch/Census.
-- **Status**: **Acquired by Airbyte April 2022; repos archived, no contributions.**
-  Runnable but unmaintained. Mission folded into Airbyte.
-- **Verdict**: **SKIP — never adopt an archived project.** Closes the "open
-  reverse-ETL" loop; the successor is Multiwoven (below).
-- Sources: https://www.grouparoo.com/blog/grouparoo-acquired-by-airbyte ·
-  https://airbyte.com/blog/airbyte-acquires-grouparoo-to-accelerate-data-movement
+### crowd.dev / LFX CDP — Apache-2.0 community-signal platform — ADOPT/NOTE (OSS Common Room)
+- **What**: The **closest OSS analog to Common Room / Orbit** — a Community Data
+  Platform that ingests signals across GitHub, Discord, Slack, Hacker News, etc.,
+  with **identity resolution** and activation. Exactly the "unify community/customer
+  signals" job, open-source.
+- **License**: **Apache-2.0** (verified). **Acquired by the Linux Foundation
+  (Apr 2024)**, renamed **LFX Community Data Platform**; repo
+  `linuxfoundation/crowd.dev` (formerly `CrowdDotDev/crowd.dev`) — **actively
+  developed as of Jul 2026**.
+- **Self-hostable?**: Yes (Docker); heavier stack (its own DB + services).
+- **Maturity**: High and rising — now LF-backed, which de-risks abandonment (unlike
+  Orbit, which shut down).
+- **Plug-in**: Two paths — (a) **read adapter** against its API for
+  already-resolved member/activity signals; (b) **borrow its ingestion model** for
+  our own lightweight GitHub/HN adapters. For a turnkey OSS "signal unification"
+  engine, this is the reference to point users at.
+- **Verdict**: **NOTE as the turnkey OSS Common Room; ADOPT its model.** Too heavy to
+  bundle for offline v1, but it validates the architecture and is the best "graduate
+  to a real engine" target. Its Apache-2.0 + LF backing make it the safest
+  heavyweight in this whole document.
+- Src: https://github.com/linuxfoundation/crowd.dev · https://github.com/CrowdDotDev/crowd.dev
+
+### Grouparoo — reverse-ETL — SKIP (DEAD)
+- **Status**: **Acquired by Airbyte Apr 2022; repos archived, no contributions.**
+  Runnable but unmaintained. Successor = Multiwoven.
+- **Verdict**: **SKIP — never adopt an archived project.**
+- Src: https://www.grouparoo.com/blog/grouparoo-acquired-by-airbyte
+
+### Multiwoven — AGPL-3.0 reverse-ETL (Grouparoo successor) — NOTE (activation, not ingestion)
+- **What**: OSS reverse-ETL — warehouse → business tools. Live alternative to
+  Hightouch/Census/RudderStack.
+- **License**: **AGPL-3.0 core + MIT connectors** (verified). Self-hostable, active.
+- **Verdict**: **NOTE, don't bundle.** Belongs to the outreach/activation layer.
+  (AGPL on the core is also a reason to keep it out of our bundled deps.)
+- Src: https://github.com/Multiwoven/multiwoven
+
+### Airbyte — source-available ETL (+ reverse-ETL) — NOTE (real-connector firehose)
+- **What**: Dominant OSS data-integration platform — hundreds of source connectors
+  (CRM, ads, product) → warehouse; growing reverse-ETL.
+- **License**: mixed — MIT + Elastic License 2.0 on parts; connectors mostly MIT.
+- **Self-hostable?**: Yes (Docker/K8s), heavy (temporal/minio).
+- **Verdict**: **NOTE as the "bring-your-own-warehouse" firehose** for CRM +
+  campaign-engagement at scale. Not bundled. Its connector JSON schemas model our
+  normalized shapes.
+- Src: https://github.com/topics/reverse-etl
 
 ---
 
-## Open reverse-ETL (activation side — post-Grouparoo)
-Reverse-ETL = warehouse → SaaS "systems of action." For our *ingestion* layer this
-is the opposite direction (outreach/activation), recorded for completeness.
-
-### Multiwoven — open-source reverse ETL (Grouparoo successor)
-- **What it does**: OSS reverse-ETL — sync customer data from warehouses to business
-  tools. The live **alternative to Hightouch / Census / RudderStack**; de-facto
-  successor to the dead Grouparoo.
-- **License**: AGPL-3.0 (see verification note). Self-hostable, active.
-- **Maturity**: Medium; strongest current OSS reverse-ETL entrant.
-- **Verdict**: **NOTE, don't bundle.** Belongs to the outreach/activation layer, not
-  core ingestion. Cite if the stack later needs warehouse→SaaS activation.
-- Source: https://github.com/Multiwoven/multiwoven
-
-### Airbyte — open-source ETL (+ reverse-ETL)
-- **What it does**: The dominant open-source data-integration platform — hundreds of
-  source connectors (CRM, ads, product tools) → warehouse; growing reverse-ETL.
-- **License**: mixed — MIT + Elastic License 2.0 on parts of the platform;
-  connectors mostly MIT. Source-available core.
-- **Self-hostable?**: Yes (Docker/K8s), heavy (temporal, minio, etc.).
-- **Maturity**: Very high; the huge connector catalog is the real asset.
-- **How it plugs in**: For real deployments, Airbyte pulls CRM (HubSpot/Salesforce)
-  + ad engagement into a warehouse we then read. Too heavy to bundle; ideal as a
-  documented "bring-your-own-warehouse" path. Its connector JSON schemas are a good
-  model for our normalized shapes.
-- **Verdict**: **NOTE as the real-connector firehose.** Not a bundled dep; the
-  recommended way to populate CRM + campaign-engagement signals at scale.
-- Source: https://github.com/topics/reverse-etl
-
----
-
-## Open intent / community signal sources (Common Room / ZoomInfo-intent replacement)
+## Open intent / community signal sources (the Common Room / ZoomInfo-intent replacement)
 Commercial intent data (Bombora, ZoomInfo, Common Room's identity graph) is
-proprietary. But the **raw signals** underneath community/dev intent are largely
-PUBLIC and free to ingest:
+proprietary. But the **raw signals** underneath dev/community intent are PUBLIC and
+free to ingest — that's the whole trick:
 
-- **GitHub signals** — every star, fork, PR, issue, discussion, release-watch is a
-  public interest/buying signal. Free routes:
-  - **GitHub REST/GraphQL API** (`/repos/:o/:r/stargazers`, `/events`) — live, free
-    PAT auth, 5k req/hr authenticated.
-  - **GH Archive** (gharchive.org) + **Google BigQuery public dataset** — the full
-    public-GitHub-event firehose, queryable historically. Ideal for a **bundled
-    offline sample** (download a slice as JSONL).
-- **Common Room** itself is built on "GitHub listening." Our open version reproduces
-  the *ingestion* (public GitHub events) without the proprietary identity graph.
-- **Other free public signal streams**: Hacker News (Algolia HN API — fully open, no
-  auth), Reddit API, npm/PyPI/Docker download counts, RSS/news, Product Hunt. These
-  map to "web / 3rd-party intent."
-- **Not OSS (commercial-only → skip, keep as pluggable slot)**: Reo.dev, Clearcue,
-  LeadCognition, Orbit (shut down), ZoomInfo/Bombora. No open drop-in for their
-  *identity enrichment* — that stays a pluggable commercial adapter.
-- Sources: https://www.commonroom.io/blog/github-listening/ ·
-  https://clearcue.ai/blog/common-room-alternatives-signal-tracking ·
+| Source | Access | Auth | Offline sample? |
+|---|---|---|---|
+| **GitHub** (stars/forks/PRs/issues/watch) | REST/GraphQL API; `@octokit/rest` (MIT) | free PAT, 5k req/hr | **Yes** — GH Archive (gharchive.org) / BigQuery public dataset → JSONL slice |
+| **Hacker News** | Algolia HN API | none | Yes — HN API is fully open |
+| **Reddit** | Reddit API | free app token | Yes |
+| **npm / PyPI / Docker pulls** | registry download-count APIs | none | Yes |
+| **RSS / news / Product Hunt** | RSS + PH API | mostly none | Yes |
+
+- **Common Room** itself is "GitHub listening" + an identity graph. Our open version
+  reproduces the *ingestion* (public events); the proprietary *identity enrichment*
+  stays a pluggable commercial slot (or use **LFX CDP** for OSS identity resolution).
+- **Commercial-only → SKIP (keep as pluggable slot)**: Reo.dev, Clearcue,
+  LeadCognition, Orbit (shut down), ZoomInfo/Bombora.
+- Src: https://www.commonroom.io/blog/github-listening/ ·
   https://leadcognition.io/blog/developer-signal-intelligence-guide
 
 ---
 
-_(continued — crowd.dev status, Segment HTTP spec, TS adapter design, final default below)_
+## Warehouse-native / webhook capture + the Segment HTTP spec
+The lowest-friction, most durable ingestion contract is **not a product** — it's the
+**Segment HTTP Tracking API spec**, which every CDP-class tool already speaks:
+
+- **Methods**: `identify` (user + traits), `track` (action + properties), `page`,
+  `group`, `alias`, `screen`, plus `batch` (array of the above).
+- **Transport**: plain HTTP `POST` of JSON. No SDK required to *receive* it — a
+  webhook endpoint that validates the documented shape is enough.
+- **Why this is the wire format**: Jitsu, RudderStack, Segment, and OpenSnowcat can
+  ALL emit Segment-spec events to a webhook destination. By making our ingest
+  endpoint Segment-spec-compatible, we get all of them as connectors for free, and
+  we depend on a spec (stable, permissive to implement) rather than any one
+  source-available product.
+- **Warehouse-native variant**: for users who already land events in a warehouse
+  (via Airbyte/Snowplow/RudderStack), a **SQL-read adapter** (parameterized query →
+  normalized Signal) covers the "bring-your-own-warehouse" path with no streaming.
+- **Package note**: Segment's own `@segment/analytics-node` is **MIT** (verified) and
+  useful for its TypeScript event *types*, but it's a *sender*; for a *receiver* we
+  only need to validate JSON against the spec (use `zod`), so it's optional.
+- Src: https://developer.segment.com/docs/connections/sources/catalog/libraries/server/http-api ·
+  https://github.com/segmentio/analytics-node (MIT)
+
+---
+
+## How it plugs into a TypeScript workflow runtime — the `SignalSource` adapter
+One small interface. The offline JSONL fixture source and every real connector are
+just implementations of it. This is the "clean adapter interface for real connectors"
+the task asks for.
+
+```ts
+// A normalized signal — the ONE shape the rest of the stack reasons about.
+// Modeled on the Segment spec (identify/track) unified with intent events.
+export interface Signal {
+  id: string;                       // stable dedupe key
+  ts: string;                       // ISO-8601
+  source: string;                   // "posthog" | "github" | "segment-webhook" | "sample" ...
+  kind: "product_usage" | "crm" | "campaign" | "intent" | "identify";
+  actor: {                          // who (person/account), best-effort resolved
+    userId?: string; anonId?: string;
+    email?: string; company?: string; handle?: string;
+  };
+  action?: string;                  // "track" event name / "star" / "page_view"
+  traits?: Record<string, unknown>; // identify traits
+  properties?: Record<string, unknown>;
+  raw?: unknown;                     // original payload for audit
+}
+
+// Every source implements this. Pull sources yield; push sources are fed by a webhook.
+export interface SignalSource {
+  name: string;
+  mode: "pull" | "push";
+  // pull: fetch a page/window of signals (offline fixture, PostHog, GitHub, SQL)
+  pull?(cursor?: string): Promise<{ signals: Signal[]; nextCursor?: string }>;
+  // push: normalize one inbound webhook body (Segment-spec, RudderStack, Jitsu)
+  normalize?(body: unknown): Signal[];
+}
+```
+
+Concrete adapters (all thin, all optional except the bundled sample):
+
+- **`SampleSource` (DEFAULT, offline)** — reads `data/signals.sample.jsonl` and
+  yields `Signal[]`. Zero network, zero credentials. This is what makes the stack
+  run offline out of the box. Fixtures include a mix of `product_usage` (PostHog-
+  shaped), `crm` (HubSpot-shaped), `campaign` (email-open-shaped), and `intent`
+  (GitHub-star-shaped) rows so downstream agents have all four Guan signal types.
+- **`SegmentWebhookSource` (push)** — an HTTP route that validates the Segment spec
+  with `zod` and maps `identify`/`track`/`page`/`group` → `Signal`. Instantly
+  compatible with Jitsu, RudderStack, Segment, OpenSnowcat.
+- **`PostHogSource` (pull)** — `posthog-node` / REST `/query` (HogQL) → `Signal`
+  (`kind:"product_usage"`).
+- **`GitHubSignalSource` (pull)** — `@octokit/rest` → stars/forks/issues/PRs as
+  `Signal` (`kind:"intent"`). Also the generator for the bundled sample (dump a GH
+  Archive slice to JSONL).
+- **`SqlWarehouseSource` (pull)** — parameterized query against a user's warehouse
+  (Postgres/BigQuery/Snowflake) → `Signal`. The "bring-your-own-warehouse" path.
+
+The runtime only ever sees `Signal`. Swapping the sample fixture for a real PostHog
+or GitHub key is a one-line source registration — nothing downstream changes.
+
+---
+
+## Summary verdict table
+
+| Tool | Type | License | Self-host | Maturity | Verdict |
+|---|---|---|---|---|---|
+| **Jitsu** | Event ingestion (CDP) | **MIT** | Yes (Docker) | Med-High | **ADOPT** (optional real connector; model wire format) |
+| **PostHog** | Product analytics + CDP | **MIT** (core) | Yes (~100k ev/mo) | Very High | **ADOPT** (product-usage connector) |
+| **crowd.dev / LFX CDP** | Community signal (Common Room analog) | **Apache-2.0** | Yes | High (LF-backed) | **NOTE/ADOPT model** (turnkey OSS graduation target) |
+| **OpenSnowcat** | Behavioral pipeline | **Apache-2.0** | Yes | Med | NOTE (Snowplow escape hatch) |
+| **GitHub / HN / Reddit APIs** | Public intent signals | Free APIs | n/a | High | **ADOPT** (open intent ingestion) |
+| **Airbyte** | ETL connector firehose | MIT + ELv2 | Yes (heavy) | Very High | NOTE (bring-your-own-warehouse) |
+| **RudderStack** | CDP | **ELv2** (src-avail) | Yes (heavy) | High | SKIP-as-dep / EXTEND-compat (webhook) |
+| **Snowplow** | Behavioral pipeline | **SLULA** (src-avail) | Licensed | Very High | SKIP (use OpenSnowcat) |
+| **Multiwoven** | Reverse-ETL | **AGPL-3.0** core | Yes | Med | NOTE (activation, not ingestion) |
+| **Grouparoo** | Reverse-ETL | archived | Dead | Dead | **SKIP** |
+| Common Room / ZoomInfo / Bombora / Reo.dev / Clearcue / Orbit | Commercial intent | Proprietary | No | — | SKIP (pluggable commercial slot) |
+
+---
+
+## FINAL DEFAULT for v1
+
+**Default = our own `SignalSource` interface + a bundled JSONL sample dataset, with
+three thin real adapters behind it.** No heavyweight CDP is bundled; every real
+engine (Jitsu, PostHog, crowd.dev/LFX CDP, a warehouse) is an *optional* source the
+user opts into. This satisfies both constraints: runs offline with sample data, and
+has a clean adapter interface for real connectors.
+
+- **Offline default source**: `SampleSource` over `data/signals.sample.jsonl`
+  (product_usage + crm + campaign + intent rows). Zero deps, zero creds.
+- **First real connectors** (opt-in): `SegmentWebhookSource` (covers Jitsu/
+  RudderStack/Segment via the spec — no package needed), `PostHogSource`,
+  `GitHubSignalSource`.
+- **Graduation target** for users who want a turnkey OSS signal engine: **LFX CDP
+  (crowd.dev, Apache-2.0)** or **Jitsu (MIT)**.
+
+### The 2–3 concrete packages to install (all verified MIT)
+```bash
+npm i zod posthog-node @octokit/rest
+```
+1. **`zod`** (MIT, `colinhacks/zod`) — defines + validates the `Signal` schema and
+   the inbound Segment-spec webhook payloads. This is the backbone of the "clean
+   adapter interface"; it needs no network, so it also guards the offline fixtures.
+2. **`posthog-node`** (MIT, `PostHog/posthog-node`) — the first real connector
+   (product-usage signal). Also lets the stack *emit* its own events if desired.
+3. **`@octokit/rest`** (MIT, `octokit/rest.js`) — the first real intent connector
+   (public GitHub signals) and the generator for the bundled offline sample.
+
+_Optional:_ `@segment/analytics-node` (MIT) only if you want Segment's TS event
+*types*; not required, since a webhook receiver just validates JSON with `zod`.
+
+**Why not a CDP as the dep**: RudderStack (ELv2) and Snowplow (SLULA) are
+source-available and heavy; bundling them is a licensing + ops burden for an open
+stack. Jitsu (MIT) and PostHog (MIT) are the right *optional* engines, but the
+offline-first, clean-adapter requirement is met better by owning a 30-line interface
++ JSONL fixtures than by taking a hard dependency on any one product.

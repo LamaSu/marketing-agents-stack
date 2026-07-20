@@ -1,0 +1,182 @@
+[
+  {
+    "id": "gl-lex-guarantee-1",
+    "category": "guaranteed_outcome",
+    "type": "lexicon",
+    "content": "Never use 'guarantee', 'guaranteed', 'ensures', or 'promise' when describing customer outcomes, ROI, or results. If there is a citable customer result, phrase it as \"customers have reported...\" and cite the published source — never assert it as a certainty.",
+    "severity": "high",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-lex-guarantee-2",
+    "category": "guaranteed_outcome",
+    "type": "lexicon",
+    "content": "Avoid 'risk-free', 'guaranteed results', or 'zero-risk' framing anywhere in partner content, including headlines, CTAs, and image captions.",
+    "severity": "medium",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-lex-superlative-1",
+    "category": "unapproved_superlative",
+    "type": "lexicon",
+    "content": "Do not use unqualified superlatives about KLZ or the joint solution: 'no other platform comes close', 'best-in-class', 'unmatched', 'unrivaled', '#1', \"world's best\". Describe what the solution does concretely instead (e.g. 'automates document-heavy workflows across finance, legal, and operations').",
+    "severity": "medium",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-lex-superlative-2",
+    "category": "unapproved_superlative",
+    "type": "lexicon",
+    "content": "'Industry-leading' and 'category-defining' require a cited third-party source (analyst report, published benchmark); used without one, they count as unapproved superlatives.",
+    "severity": "low",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-lex-quant-1",
+    "category": "uncited_quantitative",
+    "type": "lexicon",
+    "content": "Any numeric claim about outcomes (percentages, multipliers like '10x', dollar savings, time saved) requires either a published source URL or written KLZ approval attached to the submission. Flag any percent / multiplier / dollar-amount pattern that has no adjacent citation.",
+    "severity": "high",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-deny-roadmap-1",
+    "category": "roadmap_disclosure",
+    "type": "denylist",
+    "content": "Do not reference 'Agent Marketplace', its Q4 2026 target date, or any KLZ product/feature not yet publicly announced. Roadmap communications come from KLZ only.",
+    "severity": "high",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-deny-roadmap-2",
+    "category": "roadmap_disclosure",
+    "type": "denylist",
+    "content": "Internal codenames are denylisted from partner content: 'Project Lighthouse', 'Orchestrate 2.0', 'Agent Marketplace'. If a partner asset references an internal codename, remove it and describe only shipped, generally-available capabilities.",
+    "severity": "high",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-deny-roadmap-3",
+    "category": "roadmap_disclosure",
+    "type": "denylist",
+    "content": "Any forward-looking date attached to a KLZ capability ('launching in Q_ 20__', 'coming soon') is a roadmap disclosure unless the feature already has a public KLZ announcement to cite.",
+    "severity": "medium",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-allow-spokespeople-1",
+    "category": "unapproved_spokesperson_quote",
+    "type": "allowlist",
+    "content": "Approved KLZ spokespeople for partner content: Dana Whitfield (VP Partnerships) and Sam Okafor (Head of Ecosystem). A quote attributed to any other KLZ employee — including executives — requires written, piece-specific approval from KLZ Partner Marketing before it can be published.",
+    "severity": "high",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-allow-quote-1",
+    "category": "unapproved_spokesperson_quote",
+    "type": "allowlist",
+    "content": "Approved quote — Dana Whitfield, VP Partnerships, KLZ: \"We built KLZ Orchestrate so builders like our partners can ship agentic workflows without reinventing infrastructure.\" Partners may use this quote verbatim with attribution.",
+    "severity": "medium",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-allow-quote-2",
+    "category": "unapproved_spokesperson_quote",
+    "type": "allowlist",
+    "content": "Approved quote — Sam Okafor, Head of Ecosystem, KLZ: \"Our best integrations come from partners who understand their customers' workflows better than we ever could.\" Partners may use this quote verbatim with attribution.",
+    "severity": "medium",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-tier-badge-1",
+    "category": "badge_tier_misuse",
+    "type": "tier_map",
+    "content": "'Powered by KLZ Orchestrate' badge is Elite-tier only. Select-tier partners must use the 'KLZ Select Partner' designation instead. Registered-tier partners may not display any KLZ badge or lockup.",
+    "severity": "high",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-tier-badge-2",
+    "category": "badge_tier_misuse",
+    "type": "tier_map",
+    "content": "Tier badge map: Elite -> \"Powered by KLZ Orchestrate\"; Select -> \"KLZ Select Partner\"; Registered -> no badge (a plain-text mention of a 'KLZ integration' is permitted; no lockup or badge graphic).",
+    "severity": "medium",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-msg-positioning-1",
+    "category": "positioning",
+    "type": "approved_messaging",
+    "content": "KLZ Orchestrate is the agentic orchestration layer that lets partners connect Claude-native agents to their own systems of record — without rebuilding their data infrastructure first.",
+    "severity": "low",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-msg-capability-1",
+    "category": "product_capability",
+    "type": "approved_messaging",
+    "content": "KLZ Orchestrate automates document-heavy workflows across finance, legal, and operations by combining Claude's reasoning with your existing systems of record.",
+    "severity": "low",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-msg-capability-2",
+    "category": "product_capability",
+    "type": "approved_messaging",
+    "content": "KLZ Orchestrate's claim-review agent checks partner-submitted content against KLZ's approved messaging corpus and brand rules, and returns categorized findings with a recommended change for each. It does not rewrite or generate replacement marketing copy.",
+    "severity": "low",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-msg-proof-1",
+    "category": "customer_proof",
+    "type": "approved_messaging",
+    "content": "In KLZ's Q2 2026 customer survey (published at klz.com/reports/q2-2026), joint customers reported a median 35% reduction in manual workflow processing time across a sample of 40 partner deployments. Results vary by environment and integration depth.",
+    "severity": "low",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-msg-proof-2",
+    "category": "customer_proof",
+    "type": "approved_messaging",
+    "content": "KLZ's published benchmark (klz.com/benchmarks/agentic-review-2026) found that partner-submitted content using KLZ Orchestrate's review agent reached publish-ready status in a median of 1.4 review cycles, down from 3.2 cycles under manual review.",
+    "severity": "low",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-msg-partnership-1",
+    "category": "partnership",
+    "type": "approved_messaging",
+    "content": "KLZ's partner program is built on three tiers — Registered, Select, and Elite — each unlocking deeper co-marketing, technical enablement, and joint go-to-market support as partners demonstrate integration depth and customer outcomes.",
+    "severity": "low",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  },
+  {
+    "id": "gl-msg-trust-1",
+    "category": "trust_and_security",
+    "type": "approved_messaging",
+    "content": "KLZ Orchestrate never auto-sends partner or customer communications. Every agent-drafted action — an email, an export, an outreach message — lands in a pending state for a human to review, edit, or approve before it goes out.",
+    "severity": "low",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
+  }
+]
