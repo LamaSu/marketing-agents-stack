@@ -1,0 +1,27 @@
+{
+  "name": "@mstack/runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The draft-first dispatch gate + the HITL workflows that wire the product agents into the signal→decision→action loop (research/06-architecture.md §3.3, §4).",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@mstack/core": "workspace:*",
+    "@mstack/memory": "workspace:*",
+    "@mstack/credentials": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0",
+    "rimraf": "^6.0.1"
+  }
+}
