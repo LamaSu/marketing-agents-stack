@@ -17,6 +17,9 @@ __pycache__/
 .venv/
 venv/
 
+# ML model artifacts (trained offline; see packages/adapters-scoring/train/)
+*.onnx
+
 # Env / secrets
 .env
 .env.*

@@ -136,7 +136,9 @@ export class LanceCorpus implements GuidelineCorpus {
     }));
 
     const conn = await this.getConnection();
-    this.table = await conn.createTable(this.tableName, rows, { mode: "overwrite" });
+    // LanceDB's createTable types rows as Record<string, unknown>[]; PassageRow is a
+    // record of known fields (it just lacks an index signature) — the cast is safe.
+    this.table = await conn.createTable(this.tableName, rows as unknown as Record<string, unknown>[], { mode: "overwrite" });
   }
 
   /** Top-k approved-messaging passages for "is this claim supported?"
