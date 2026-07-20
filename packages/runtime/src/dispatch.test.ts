@@ -129,7 +129,16 @@ describe("dispatchDraft — guardrail #2: THE ONLY send path", () => {
   it("on a valid approved draft + matching Approval: dispatches, marks the draft dispatched, and persists an Outcome", async () => {
     const draft = pendingDraft({ status: "approved" });
     await memory.putDraft(draft);
-    const approval = approveApproval();
+    // Real, persisted, hash-chained approval -- not just a well-shaped object. This is what
+    // `assertDispatchable` now requires: an Approval that actually went through
+    // `memory.appendApproval` (mirroring what `DraftStore#approve` does in the real flow).
+    const approval = await memory.appendApproval({
+      id: "appr_1",
+      draftId: draft.id,
+      decision: "approve",
+      actor: "human",
+      ts: now,
+    });
 
     const outcome = await dispatchDraft(draft, approval, channel, memory);
 
@@ -151,6 +160,77 @@ describe("dispatchDraft — guardrail #2: THE ONLY send path", () => {
     const outboxFile = join(outboxDir, `${draft.id}.json`);
     const written = JSON.parse(await readFile(outboxFile, "utf8")) as { draft: { id: string } };
     expect(written.draft.id).toBe(draft.id);
+  });
+
+  it("HARDENING: refuses a forged Approval object that was never persisted (never went through memory.appendApproval), even though it is structurally well-formed and would pass assertApproved", async () => {
+    const draft = pendingDraft({ status: "approved" });
+    await memory.putDraft(draft);
+    // Internally consistent with `draft` (matching draftId, decision:"approve") -- exactly the
+    // shape a forged/deserialized-from-untrusted-input Approval would have. It was never written
+    // via `memory.appendApproval`, so it has no row in the `approvals` audit log.
+    const forgedApproval = approveApproval();
+    let dispatchCalls = 0;
+    const spyChannel: OutreachChannel = {
+      name: "spy",
+      kind: "email",
+      dispatch: async () => {
+        dispatchCalls++;
+        throw new Error("should never be called");
+      },
+    };
+
+    await expect(dispatchDraft(draft, forgedApproval, spyChannel, memory)).rejects.toThrow(
+      /Approval "appr_1" is not in the system of record/,
+    );
+    expect(dispatchCalls).toBe(0);
+
+    // the draft must be untouched -- a refused dispatch must not have any side effect.
+    const stillApproved = await memory.getDraft(draft.id);
+    expect(stillApproved?.status).toBe("approved");
+  });
+
+  it("HARDENING: refuses a second dispatchDraft of an already-dispatched draft (closes the sequential double-send / TOCTOU window)", async () => {
+    const draft = pendingDraft({ status: "approved" });
+    await memory.putDraft(draft);
+    const approval = await memory.appendApproval({
+      id: "appr_double",
+      draftId: draft.id,
+      decision: "approve",
+      actor: "human",
+      ts: now,
+    });
+
+    // first dispatch succeeds normally.
+    const firstOutcome = await dispatchDraft(draft, approval, channel, memory);
+    expect(firstOutcome.result).toBe("sent");
+    const afterFirst = await memory.getDraft(draft.id);
+    expect(afterFirst?.status).toBe("dispatched");
+
+    // second dispatch reuses the SAME (now-stale) `draft`/`approval` objects the caller still
+    // holds -- both still look perfectly valid on their face. The persisted-status recheck must
+    // refuse it anyway.
+    let secondDispatchCalls = 0;
+    const spyChannel: OutreachChannel = {
+      name: "spy",
+      kind: "email",
+      dispatch: async () => {
+        secondDispatchCalls++;
+        throw new Error("should never be called");
+      },
+    };
+
+    await expect(dispatchDraft(draft, approval, spyChannel, memory)).rejects.toThrow(
+      /already dispatched/,
+    );
+    expect(secondDispatchCalls).toBe(0);
+
+    // only ONE Outcome row must exist for this draft -- the refused second call must not have
+    // produced a second "sent" record.
+    const outcomeRows = await memory.query<{ c: number | bigint }>(
+      "SELECT COUNT(*) as c FROM outcomes WHERE ref_id = $refId",
+      { refId: draft.id },
+    );
+    expect(Number(outcomeRows[0]?.c ?? -1)).toBe(1);
   });
 });
 
