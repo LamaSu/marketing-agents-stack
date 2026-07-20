@@ -1,0 +1,28 @@
+{
+  "name": "marketing-agents-stack",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open, drop-in marketing agents in production — an AI-native signal→decision→action stack (claim-drift asset review + account-intelligence activation), Claude-native, on the chorus workflow runtime with draft-first human-in-the-loop.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "turbo build",
+    "test": "turbo test",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean",
+    "demo": "turbo demo"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
