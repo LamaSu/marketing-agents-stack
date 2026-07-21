@@ -1,0 +1,35 @@
+{
+  "name": "@mstack/console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "mstack console — the SignalSphere AI \"Autonomous Activation Console\" web UI over the account-intelligence backend (signal stream · ML scoring · agent swarm · draft-first human approval).",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": { "types": "./dist/server.d.ts", "default": "./dist/server.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "node dist/server.js",
+    "start": "node dist/server.js",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@mstack/core": "workspace:*",
+    "@mstack/memory": "workspace:*",
+    "@mstack/runtime": "workspace:*",
+    "@mstack/account-intel": "workspace:*",
+    "@mstack/adapters-signals": "workspace:*",
+    "@mstack/adapters-enrichment": "workspace:*",
+    "@mstack/adapters-scoring": "workspace:*",
+    "fastify": "^5.2.0",
+    "@fastify/static": "^8.0.0"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0",
+    "rimraf": "^6.0.1"
+  }
+}

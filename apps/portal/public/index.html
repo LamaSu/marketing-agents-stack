@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Partner Content Portal</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-inner">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">KLZ</div>
+        <div class="brand-text">
+          <h1>Partner Content Portal</h1>
+          <p>Partner Marketing</p>
+        </div>
+      </div>
+      <div id="mode-badge" class="mode-badge mode-offline" title="Loading mode…">
+        <span class="mode-dot"></span>
+        <span id="mode-badge-text">checking mode…</span>
+      </div>
+    </div>
+    <nav class="tab-nav" role="tablist" aria-label="Portal sections">
+      <button type="button" class="tab-btn is-active" data-tab="submit" role="tab" aria-selected="true">Submit Content</button>
+      <button type="button" class="tab-btn" data-tab="dashboard" role="tab" aria-selected="false">Review Dashboard</button>
+      <button type="button" class="tab-btn" data-tab="internal" role="tab" aria-selected="false">INTERNAL</button>
+    </nav>
+  </header>
+
+  <main class="app-main">
+    <!-- ══════════════════════════ Submit Content ══════════════════════════ -->
+    <section id="panel-submit" class="tab-panel" role="tabpanel">
+      <div class="submit-grid">
+        <div class="submit-col-left">
+          <form id="submit-form" class="card form-card">
+            <div class="card-header"><h2>Submit Content</h2></div>
+
+            <div id="form-error" class="form-error" hidden></div>
+
+            <div class="field">
+              <label for="field-partner">Partner</label>
+              <select id="field-partner" name="partnerId" required>
+                <option value="" disabled selected>Loading partners…</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="field-title">Content title</label>
+              <input id="field-title" name="contentTitle" type="text" placeholder="e.g. How Our Partnership Automates Enterprise Workflows" required />
+            </div>
+
+            <div class="field">
+              <label for="field-type">Content type</label>
+              <select id="field-type" name="contentType" required>
+                <option value="blog" selected>Blog post</option>
+                <option value="press_release">Press release</option>
+                <option value="case_study">Case study</option>
+                <option value="social">Social post</option>
+                <option value="email">Email</option>
+                <option value="landing_page">Landing page</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label for="field-content">Content</label>
+              <textarea id="field-content" name="content" rows="12" placeholder="Paste or write the partner asset text to review…" required></textarea>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" id="btn-submit" class="btn btn-primary">Submit for review</button>
+              <button type="button" id="btn-sample" class="btn btn-secondary">Load sample draft</button>
+              <button type="button" id="btn-clear" class="btn btn-ghost">Clear</button>
+            </div>
+          </form>
+
+          <div id="results-card" class="card results-card" hidden>
+            <div class="card-header"><h2>Review result</h2></div>
+            <div id="results-body"></div>
+          </div>
+        </div>
+
+        <div class="submit-col-right">
+          <div class="card rubric-card">
+            <div class="card-header"><h2>What the review checks</h2></div>
+            <p class="rubric-intro">Every submission is scored against the number of <strong>required</strong> changes.</p>
+            <div class="table-wrap">
+              <table class="rubric-table">
+                <thead>
+                  <tr><th>Score</th><th>Changes</th><th>Meaning</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td class="rubric-score">5</td><td>0</td><td>Okay to publish</td></tr>
+                  <tr><td class="rubric-score">4</td><td>1–2</td><td>Minor edits</td></tr>
+                  <tr><td class="rubric-score">3</td><td>3</td><td>Moderate revision</td></tr>
+                  <tr><td class="rubric-score">2</td><td>4</td><td>Significant revision</td></tr>
+                  <tr><td class="rubric-score">1</td><td>5+</td><td>Needs a lot of work</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="card-header rubric-categories-header"><h3>Categories checked</h3></div>
+            <ul class="category-list">
+              <li>Guaranteed-outcome language</li>
+              <li>Quantitative claim without citation</li>
+              <li>Unapproved superlative claim</li>
+              <li>Unapproved spokesperson quote</li>
+              <li>Roadmap disclosure</li>
+              <li>Badge / partner-tier misuse</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════ Review Dashboard ══════════════════════════ -->
+    <section id="panel-dashboard" class="tab-panel" role="tabpanel" hidden>
+      <div class="card">
+        <div class="card-header">
+          <h2>Review Dashboard</h2>
+          <button type="button" id="btn-refresh-dashboard" class="btn btn-ghost btn-small">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Partner</th><th>Content title</th><th>Date</th><th>Status</th><th>Findings</th><th>Email</th></tr>
+            </thead>
+            <tbody id="dashboard-tbody">
+              <tr><td colspan="6" class="empty-row">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════ INTERNAL ══════════════════════════ -->
+    <section id="panel-internal" class="tab-panel" role="tabpanel" hidden>
+      <div class="card">
+        <div class="card-header">
+          <h2>Partner Ledger</h2>
+          <button type="button" id="btn-refresh-internal" class="btn btn-ghost btn-small">Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Partner</th><th>Approved</th><th>Returned</th><th>Total</th></tr>
+            </thead>
+            <tbody id="ledger-tbody">
+              <tr><td colspan="4" class="empty-row">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h2>Drafts awaiting approval</h2></div>
+        <p class="rubric-intro">Nothing is ever sent automatically — a human approves every draft before it dispatches.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Kind</th><th>Subject</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody id="drafts-tbody">
+              <tr><td colspan="4" class="empty-row">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="modal-overlay" class="modal-overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true">
+      <button type="button" id="modal-close" class="modal-close" aria-label="Close">×</button>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

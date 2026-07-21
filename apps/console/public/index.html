@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SignalSphere AI — Autonomous Activation Console</title>
+    <meta name="description" content="ML scoring + agentic swarm + draft-first human approval, live over your own account-intelligence backend." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>" />
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <!-- ── TOP BAR ─────────────────────────────────────────────────────── -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div class="brand-text">
+          <div class="brand-title">SignalSphere&nbsp;AI</div>
+          <div class="brand-sub">Autonomous Activation Console</div>
+        </div>
+        <span id="mode-pill" class="mode-pill" title="offline = no ANTHROPIC_API_KEY">…</span>
+      </div>
+
+      <div class="best-practice" role="note">
+        <span class="bp-tag">Industry Best Practice</span>
+        Pairing ML predictive models (scoring) with Agentic AI (reasoning &amp; action) yields
+        <strong>3.4× higher conversion</strong>.
+      </div>
+
+      <div class="stats" id="stats">
+        <div class="stat">
+          <div class="stat-label">Active Agents</div>
+          <div class="stat-value" id="stat-agents">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Autonomous Runs</div>
+          <div class="stat-value" id="stat-runs">—</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Pipeline Velocity</div>
+          <div class="stat-value pos" id="stat-velocity">—</div>
+        </div>
+      </div>
+
+      <div class="mode-toggle" id="mode-toggle" role="tablist" aria-label="Agent autonomy mode">
+        <button class="mt-opt is-active" data-mode="copilot" role="tab" aria-selected="true">Copilot</button>
+        <button class="mt-opt" data-mode="autopilot" role="tab" aria-selected="false">Autopilot</button>
+      </div>
+    </header>
+
+    <!-- ── FOUR PANELS ─────────────────────────────────────────────────── -->
+    <main class="grid">
+      <!-- 1 · Ingested Signal Stream -->
+      <section class="panel" id="panel-signals">
+        <div class="panel-head">
+          <span class="panel-icon sig" aria-hidden="true"></span>
+          <div>
+            <h2>Snowflake Data Layer</h2>
+            <p class="panel-sub">Ingested Signal Stream <span class="live-dot" title="streaming"></span></p>
+          </div>
+        </div>
+        <div class="panel-body" id="signal-stream" aria-live="polite"></div>
+      </section>
+
+      <!-- 2 · ML Scoring Engine -->
+      <section class="panel" id="panel-scoring">
+        <div class="panel-head">
+          <span class="panel-icon score" aria-hidden="true"></span>
+          <div>
+            <h2>ML Scoring Engine</h2>
+            <p class="panel-sub">Ranked ICP accounts — click to activate</p>
+          </div>
+        </div>
+        <div class="panel-body" id="account-list"></div>
+      </section>
+
+      <!-- 3 · Agentic Orchestration Hub -->
+      <section class="panel" id="panel-hub">
+        <div class="panel-head">
+          <span class="panel-icon hub" aria-hidden="true"></span>
+          <div>
+            <h2>Agentic Orchestration Hub</h2>
+            <p class="panel-sub">Active specialized workers</p>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="workers" id="workers">
+            <div class="worker" data-worker="sdr">
+              <span class="w-dot"></span>
+              <div class="w-name">SDR&nbsp;Researcher</div>
+              <div class="w-role">reads signal tables</div>
+            </div>
+            <div class="worker" data-worker="copy">
+              <span class="w-dot"></span>
+              <div class="w-name">Copywriter&nbsp;AI</div>
+              <div class="w-role">drafts the sequence</div>
+            </div>
+            <div class="worker" data-worker="router">
+              <span class="w-dot"></span>
+              <div class="w-name">GTM&nbsp;Router</div>
+              <div class="w-role">picks next-best-action</div>
+            </div>
+          </div>
+          <div class="log-head">Swarm Reasoning Engine</div>
+          <div class="reasoning" id="reasoning"></div>
+        </div>
+      </section>
+
+      <!-- 4 · Resolution & Action Studio -->
+      <section class="panel" id="panel-studio">
+        <div class="panel-head">
+          <span class="panel-icon target" aria-hidden="true"></span>
+          <div>
+            <h2>Resolution &amp; Action Studio</h2>
+            <p class="panel-sub">Target insight console</p>
+          </div>
+        </div>
+        <div class="panel-body" id="studio">
+          <div class="studio-empty" id="studio-empty">Select an account to activate the swarm…</div>
+          <div class="studio-content" id="studio-content" hidden>
+            <div class="target-head">
+              <div>
+                <div class="target-name" id="target-name">—</div>
+                <div class="target-domain" id="target-domain">—</div>
+              </div>
+              <div class="target-score">
+                <span class="score-badge" id="target-score">—</span>
+                <span class="tier-chip" id="target-tier">—</span>
+              </div>
+            </div>
+
+            <div class="studio-section">
+              <div class="section-title">Buying-Group Persona Heatmap</div>
+              <div class="heatmap" id="heatmap"></div>
+            </div>
+
+            <div class="studio-section">
+              <div class="section-title">Buying-Group Committee</div>
+              <div class="committee" id="committee"></div>
+            </div>
+
+            <div class="studio-section">
+              <div class="section-title">Multi-Touch Activity Timeline</div>
+              <div class="timeline-scroll"><div class="timeline" id="timeline"></div></div>
+            </div>
+
+            <div class="studio-section">
+              <div class="section-title">Agentic Copywriter Sequence</div>
+              <div class="draft-card">
+                <div class="draft-subject" id="draft-subject">—</div>
+                <pre class="draft-body" id="draft-body">—</pre>
+              </div>
+            </div>
+
+            <div class="approval-gate" id="approval-gate">
+              <div class="gate-banner" id="gate-banner">Awaiting human validation</div>
+              <button class="approve-btn" id="approve-btn">Approve &amp; dispatch</button>
+              <p class="gate-note" id="gate-note"></p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

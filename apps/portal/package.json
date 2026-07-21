@@ -1,0 +1,32 @@
+{
+  "name": "@mstack/portal",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Partner Content Portal — the web UI for the Asset-Review / Claim-Drift agent (research/04-slides-and-demos.md TALK 1): Submit Content · Review Dashboard · INTERNAL, over the real @mstack/runtime content-review workflow.",
+  "main": "./dist/server.js",
+  "types": "./dist/server.d.ts",
+  "exports": {
+    ".": { "types": "./dist/server.d.ts", "default": "./dist/server.js" }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dev": "node dist/server.js",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@mstack/core": "workspace:*",
+    "@mstack/memory": "workspace:*",
+    "@mstack/runtime": "workspace:*",
+    "@mstack/reviewer": "workspace:*",
+    "fastify": "^5.10.0",
+    "@fastify/static": "^10.1.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.0",
+    "rimraf": "^6.0.1"
+  }
+}
