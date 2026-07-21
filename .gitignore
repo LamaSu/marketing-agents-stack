@@ -32,6 +32,11 @@ venv/
 chorus/state/
 .data/
 
+# Manim working dirs (regenerable; keep the .py + brief.md + final .mp4)
+videos/**/media/
+videos/**/_frames/
+videos/**/*.render.log
+
 # OS
 .DS_Store
 Thumbs.db
