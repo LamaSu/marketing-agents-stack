@@ -28,6 +28,27 @@ DuckDB is a single-writer embedded database. This package's contract is **one sh
 - `DATA_DIR` env (default `./.data`) — the warehouse file is `${DATA_DIR}/memory.duckdb`. This is a filesystem path, not a credential; this package never reads secrets from `process.env` (all keys are brokered by `gatecraft` elsewhere in the stack).
 - Pass `":memory:"` explicitly to `openMemory()` for an in-memory database (used by this package's own tests).
 
+## External audit export (halo-record)
+
+`exportAuditHalo(memory)` / `writeHaloAudit(memory, path)` map the `approvals`
+chain into [halo-record](https://github.com/bkuan001/halo-record)'s
+(Apache-2.0) "Halo Runtime Record" schema — SHA-256 over RFC 8785
+(JSON Canonicalization Scheme) canonical bytes, `integrity.prev_hash` /
+`integrity.hash` linkage, 64-zeros genesis — so an **external** `halo verify`
+(a separate Python CLI; never vendored here) can independently confirm the
+chain was never tampered with, without trusting this codebase. This is a
+read-only EXPORTER: `appendApproval`/`verifyAuditChain` above are untouched.
+See `packages/memory/src/halo-export.ts` for the exact field mapping and its
+`mstack export-audit --format halo [--out <file>]` CLI wiring in `apps/cli`.
+
+```ts
+import { exportAuditHalo, verifyHaloChain, writeHaloAudit } from "@mstack/memory";
+
+const records = await exportAuditHalo(memory); // HaloRecord[]
+await writeHaloAudit(memory, "./audit/halo-export.json");
+verifyHaloChain(records); // true — an in-repo mirror of halo's own algorithm; run the real `halo verify` for an independent check
+```
+
 ## Assumptions made against the `@duckdb/node-api` ("Neo") client
 
 Written without running `pnpm install`/`pnpm test` locally per `docs/build-conventions.md` (the dev tablet OOMs on native deps) — verify these on the Spark build:

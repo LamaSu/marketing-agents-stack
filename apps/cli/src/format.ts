@@ -75,6 +75,12 @@ export function printApproveResult(draftId: string, outcome: Outcome, draft: Dra
   console.log("The send is recorded in the hash-chained audit log (mstack verifies it on approve).");
 }
 
+export function printExportAuditResult(count: number, path: string): void {
+  console.log(RULE);
+  console.log(`export-audit — wrote ${count} halo-record(s) (schema v0.1) to ${path}`);
+  console.log(`Verify independently with the external halo-record CLI:  halo verify ${path}`);
+}
+
 export function printPendingList(drafts: Draft[]): void {
   console.log(RULE);
   if (drafts.length === 0) {
@@ -124,12 +130,15 @@ export function printHelp(): void {
       "  approve <draftId>    Approve + dispatch one draft (the only path to an outbox send)",
       "  review <file>        Review one asset file (.json ReviewRequest, or raw text)",
       "  score  <domain>      Score one account by domain (rules-only, offline)",
+      "  export-audit         Export the approvals hash chain in halo-record's verifiable schema",
       "  help                 Show this help",
       "",
       "Flags:",
       "  --data-dir <dir>     Warehouse + corpus root      (env DATA_DIR,   default ./.data)",
       "  --drafts-dir <dir>   Pending-draft files          (env DRAFTS_DIR, default ./drafts)",
       "  --outbox-dir <dir>   Dispatched sends             (env OUTBOX_DIR, default ./outbox)",
+      "  --format <fmt>       export-audit format          (only \"halo\" is implemented)",
+      "  --out <file>         export-audit destination     (default: print JSON to stdout)",
       "",
       "Mode: live iff ANTHROPIC_API_KEY is set, else offline (no network, no credentials).",
       "",

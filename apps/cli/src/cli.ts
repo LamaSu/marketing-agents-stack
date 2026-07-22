@@ -14,7 +14,7 @@ import type { CliContext, ContextOverrides } from "./context.js";
 import { openContext } from "./context.js";
 import { runSeed } from "./seed.js";
 import { runDemo } from "./demo.js";
-import { runApprove, runList, runReviewFile, runScoreDomain } from "./commands.js";
+import { runApprove, runExportAudit, runList, runReviewFile, runScoreDomain } from "./commands.js";
 import { printDemoResult, printHelp, printModeBanner, printSeedResult } from "./format.js";
 
 /** Run `fn` inside an opened context, printing the mode banner first and always
@@ -44,6 +44,8 @@ async function main(): Promise<number> {
       "data-dir": { type: "string" },
       "drafts-dir": { type: "string" },
       "outbox-dir": { type: "string" },
+      format: { type: "string" },
+      out: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -83,6 +85,12 @@ async function main(): Promise<number> {
 
     case "score":
       await withContext(overrides, (ctx) => runScoreDomain(ctx, requireArg(positionals[1], "domain")));
+      return 0;
+
+    case "export-audit":
+      await withContext(overrides, (ctx) =>
+        runExportAudit(ctx, { format: values.format, out: values.out }),
+      );
       return 0;
 
     default:

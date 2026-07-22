@@ -11,10 +11,17 @@ import { SampleProvider } from "@mstack/adapters-enrichment";
 import { RulesScorer } from "@mstack/adapters-scoring";
 import { LocalOutreachChannel, approveAndDispatch } from "@mstack/runtime";
 import { reviewAsset } from "@mstack/reviewer";
+import { exportAuditHalo, writeHaloAudit } from "@mstack/memory";
 
 import type { CliContext } from "./context.js";
 import { buildLiveCorpus, loadGuidelines, offlineReviewResult } from "./reviewers.js";
-import { printApproveResult, printPendingList, printReviewResult, printScoreResult } from "./format.js";
+import {
+  printApproveResult,
+  printExportAuditResult,
+  printPendingList,
+  printReviewResult,
+  printScoreResult,
+} from "./format.js";
 
 /**
  * `mstack approve <draftId>` — approve + dispatch through the one gated path
@@ -81,4 +88,35 @@ export async function runScoreDomain(_ctx: CliContext, domain: string): Promise<
 
   const score = await new RulesScorer().score(account, signals);
   printScoreResult(normalized, score);
+}
+
+export interface ExportAuditOptions {
+  /** Only "halo" is implemented (research/10-sota-integration-design.md §2.11, B3). */
+  format?: string;
+  /** Destination file; omit to print the JSON array to stdout instead. */
+  out?: string;
+}
+
+/**
+ * `mstack export-audit --format halo [--out <file>]` — exports the
+ * `approvals` hash chain in halo-record's schema so an EXTERNAL `halo verify`
+ * (a separate Python CLI, never vendored here — see
+ * `packages/memory/src/halo-export.ts`) can independently confirm the chain.
+ * This is an EXPORT only: it never touches the internal welded
+ * `appendApproval`/`verifyAuditChain` chain that `mstack approve` writes to.
+ */
+export async function runExportAudit(ctx: CliContext, opts: ExportAuditOptions): Promise<void> {
+  const format = opts.format ?? "halo";
+  if (format !== "halo") {
+    throw new Error(`export-audit: unsupported --format "${format}" (only "halo" is implemented)`);
+  }
+
+  const out = opts.out;
+  if (out) {
+    const records = await writeHaloAudit(ctx.memory, out);
+    printExportAuditResult(records.length, out);
+  } else {
+    const records = await exportAuditHalo(ctx.memory);
+    console.log(JSON.stringify(records, null, 2));
+  }
 }
