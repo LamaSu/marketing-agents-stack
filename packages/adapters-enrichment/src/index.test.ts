@@ -13,10 +13,13 @@ import {
   LlmWebProvider,
   crawl4aiFetchSite,
   createCrawl4aiFetchSite,
+  createFirecrawlFetchSite,
+  createAntiBotFetchSite,
   type ResolveMx,
   type FetchSite,
   type ClaudeMessagesClient,
   type ClaudeMessageResult,
+  type AntiBotFetchImpl,
 } from "./index.js";
 
 /* ─────────────────────────── SampleProvider ─────────────────────────── */
@@ -569,5 +572,265 @@ describe("crawl4aiFetchSite / createCrawl4aiFetchSite", () => {
     expect(merged?.provenance.employees).toBe("wikidata");
     expect(merged?.firmographic.tech).toEqual(["typescript"]); // llm-web still wins fields the registry lacks
     expect(merged?.provenance.tech).toBe("llm-web");
+  });
+});
+
+/* ─────────────────────────── firecrawlFetchSite (opt-in, lowest-trust) ─────────────────────────── */
+
+describe("createFirecrawlFetchSite", () => {
+  it("throws when config.apiKey is empty -- a secret, never ambient-env-read, opt-in only", () => {
+    expect(() => createFirecrawlFetchSite({ apiKey: "" })).toThrow(/apiKey/i);
+  });
+
+  it("POSTs {url, formats:['markdown']} to <baseUrl>/v2/scrape with a Bearer auth header and returns Firecrawl's markdown", async () => {
+    const calls: Array<{ url: string; headers: Record<string, string> | undefined; body: unknown }> = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      calls.push({
+        url: String(input),
+        headers: init?.headers as Record<string, string> | undefined,
+        body: init?.body ? JSON.parse(String(init.body)) : null,
+      });
+      return new Response(
+        JSON.stringify({ success: true, data: { markdown: "Example Corp builds developer tools." } }),
+        { status: 200 },
+      );
+    };
+    const fetchSite = createFirecrawlFetchSite({ apiKey: "fc-test-key", fetchImpl });
+
+    const text = await fetchSite("https://example.com");
+
+    expect(text).toBe("Example Corp builds developer tools.");
+    expect(calls).toEqual([
+      {
+        url: "https://api.firecrawl.dev/v2/scrape",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer fc-test-key" },
+        body: { url: "https://example.com", formats: ["markdown"] },
+      },
+    ]);
+  });
+
+  it("strips a trailing slash from a custom baseUrl (self-hosted Firecrawl override)", async () => {
+    const calls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      calls.push(String(input));
+      return new Response(JSON.stringify({ success: true, data: { markdown: "content" } }), { status: 200 });
+    };
+    const fetchSite = createFirecrawlFetchSite({ apiKey: "fc-test-key", fetchImpl, baseUrl: "http://self-hosted.local/" });
+    await fetchSite("https://example.com");
+    expect(calls).toEqual(["http://self-hosted.local/v2/scrape"]);
+  });
+
+  it("falls back to defaultFetchSite (injected, so the test stays offline) on a non-OK API response", async () => {
+    const fetchImpl: typeof fetch = async () => new Response("unauthorized", { status: 401 });
+    const fallbackCalls: string[] = [];
+    const fallbackFetchSite: FetchSite = async (url) => {
+      fallbackCalls.push(url);
+      return "fallback content";
+    };
+    const fetchSite = createFirecrawlFetchSite({ apiKey: "fc-test-key", fetchImpl, fallbackFetchSite });
+
+    const text = await fetchSite("https://example.com");
+
+    expect(text).toBe("fallback content");
+    expect(fallbackCalls).toEqual(["https://example.com"]);
+  });
+
+  it("falls back to defaultFetchSite (injected) when the API is unreachable (fetch throws)", async () => {
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error("ECONNREFUSED");
+    };
+    const fallbackFetchSite: FetchSite = async () => "fallback content";
+    const fetchSite = createFirecrawlFetchSite({ apiKey: "fc-test-key", fetchImpl, fallbackFetchSite });
+
+    expect(await fetchSite("https://example.com")).toBe("fallback content");
+  });
+
+  it("falls back to defaultFetchSite (injected) on success:false or empty/missing markdown", async () => {
+    const reportsFailure: typeof fetch = async () =>
+      new Response(JSON.stringify({ success: false, error: "scrape blocked by target site" }), { status: 200 });
+    const emptyMarkdown: typeof fetch = async () =>
+      new Response(JSON.stringify({ success: true, data: { markdown: "   " } }), { status: 200 });
+    const fallbackFetchSite: FetchSite = async () => "fallback content";
+
+    const failureSite = createFirecrawlFetchSite({ apiKey: "fc-test-key", fetchImpl: reportsFailure, fallbackFetchSite });
+    const emptySite = createFirecrawlFetchSite({ apiKey: "fc-test-key", fetchImpl: emptyMarkdown, fallbackFetchSite });
+
+    expect(await failureSite("https://example.com")).toBe("fallback content");
+    expect(await emptySite("https://example.com")).toBe("fallback content");
+  });
+
+  it("wired end-to-end via enrichmentProvider('llm-web', {fetchSite}) still tags source:'llm-web' -- lowest-trust paid tier, leaving mergeEnrichment's registry>llm-web>paid trust order and per-field provenance unaffected", async () => {
+    const client: ClaudeMessagesClient = {
+      messages: {
+        create: async () =>
+          ({
+            content: [
+              {
+                type: "tool_use",
+                name: "emit_enrichment_record",
+                input: { name: "Example Corp", employees: 42, industry: "SaaS", region: "US", tech: ["typescript"] },
+              },
+            ],
+          }) satisfies ClaudeMessageResult,
+      },
+    };
+    const firecrawlCalls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      firecrawlCalls.push(String(input));
+      return new Response(
+        JSON.stringify({ success: true, data: { markdown: "Example Corp builds developer tools for TypeScript teams." } }),
+        { status: 200 },
+      );
+    };
+    const fetchSite = createFirecrawlFetchSite({ apiKey: "fc-test-key", fetchImpl });
+
+    const provider = enrichmentProvider("llm-web", { client, fetchSite });
+    const llmRecord = await provider.enrich({ domain: "example.com" });
+
+    // Firecrawl only changes *how* llm-web fetches site text -- the resulting record's
+    // `source` (what mergeEnrichment ranks by) is unchanged, and it's still the
+    // lowest-trust tier once merged against any registry record.
+    expect(llmRecord?.source).toBe("llm-web");
+    expect(firecrawlCalls).toEqual(["https://api.firecrawl.dev/v2/scrape"]);
+    expect(llmRecord).not.toBeNull();
+
+    const wikidataRecord: EnrichmentRecord = {
+      domain: "example.com",
+      name: "Example Corp (registry)",
+      firmographic: { employees: 999, industry: "Software", region: "US", tech: [] },
+      provenance: { employees: "wikidata", industry: "wikidata", region: "wikidata" },
+      source: "wikidata",
+    };
+    const merged = mergeEnrichment([llmRecord as EnrichmentRecord, wikidataRecord]);
+    expect(merged?.firmographic.employees).toBe(999); // registry still wins -- trust order untouched
+    expect(merged?.provenance.employees).toBe("wikidata");
+    expect(merged?.firmographic.tech).toEqual(["typescript"]); // llm-web still wins fields the registry lacks
+    expect(merged?.provenance.tech).toBe("llm-web");
+  });
+});
+
+/* ─────────────────────────── anti-bot FetchSite (clean-room, BYO) ─────────────────────────── */
+
+describe("createAntiBotFetchSite", () => {
+  it("succeeds on the first attempt and returns cleaned text when the injected fetchImpl succeeds immediately", async () => {
+    const seenUAs: string[] = [];
+    const fetchImpl: AntiBotFetchImpl = async (_url, { headers }) => {
+      seenUAs.push(headers["User-Agent"] ?? "");
+      return new Response("<html><body><p>Example Corp builds developer tools.</p></body></html>", { status: 200 });
+    };
+    const fetchSite = createAntiBotFetchSite({ fetchImpl, backoffMs: 0 });
+
+    const text = await fetchSite("https://example.com");
+
+    expect(text).toBe("Example Corp builds developer tools.");
+    expect(seenUAs).toHaveLength(1);
+    expect(seenUAs[0]).toMatch(/Mozilla/); // built-in default UA list used since none was configured
+  });
+
+  it("rotates User-Agent and proxy across attempts and succeeds once a later attempt gets through", async () => {
+    let callCount = 0;
+    const seen: Array<{ ua: string; proxy: string | undefined }> = [];
+    const fetchImpl: AntiBotFetchImpl = async (_url, { headers, proxy }) => {
+      callCount++;
+      seen.push({ ua: headers["User-Agent"] ?? "", proxy });
+      if (callCount < 3) return new Response("blocked", { status: 403 });
+      return new Response("<html><body>Got through on attempt 3.</body></html>", { status: 200 });
+    };
+    const fetchSite = createAntiBotFetchSite({
+      fetchImpl,
+      backoffMs: 0,
+      retries: 3,
+      proxies: ["http://proxy-a.example:8080", "http://proxy-b.example:8080", "http://proxy-c.example:8080"],
+      userAgents: ["UA-1", "UA-2", "UA-3"],
+    });
+
+    const text = await fetchSite("https://example.com");
+
+    expect(text).toBe("Got through on attempt 3.");
+    expect(callCount).toBe(3);
+    expect(seen).toEqual([
+      { ua: "UA-1", proxy: "http://proxy-a.example:8080" },
+      { ua: "UA-2", proxy: "http://proxy-b.example:8080" },
+      { ua: "UA-3", proxy: "http://proxy-c.example:8080" },
+    ]);
+    // proves rotation, not repetition -- no two attempts reused the same UA or proxy
+    expect(new Set(seen.map((s) => s.ua)).size).toBe(3);
+    expect(new Set(seen.map((s) => s.proxy)).size).toBe(3);
+  });
+
+  it("uses the built-in default User-Agent list (rotating) when none is configured", async () => {
+    let callCount = 0;
+    const seenUAs: string[] = [];
+    const fetchImpl: AntiBotFetchImpl = async (_url, { headers }) => {
+      callCount++;
+      seenUAs.push(headers["User-Agent"] ?? "");
+      if (callCount < 2) return new Response("blocked", { status: 403 });
+      return new Response("<html><body>ok</body></html>", { status: 200 });
+    };
+    const fetchSite = createAntiBotFetchSite({ fetchImpl, backoffMs: 0 }); // fully default otherwise
+
+    await fetchSite("https://example.com");
+
+    expect(seenUAs).toHaveLength(2);
+    expect(seenUAs[0]).not.toBe(seenUAs[1]); // rotated, not the same UA twice
+  });
+
+  it("falls back to defaultFetchSite (injected) once every retry attempt is exhausted (bad responses)", async () => {
+    let callCount = 0;
+    const fetchImpl: AntiBotFetchImpl = async () => {
+      callCount++;
+      return new Response("blocked", { status: 403 });
+    };
+    const fallbackCalls: string[] = [];
+    const fallbackFetchSite: FetchSite = async (url) => {
+      fallbackCalls.push(url);
+      return "fallback content";
+    };
+    const fetchSite = createAntiBotFetchSite({ fetchImpl, backoffMs: 0, retries: 2, fallbackFetchSite });
+
+    const text = await fetchSite("https://example.com");
+
+    expect(text).toBe("fallback content");
+    expect(callCount).toBe(2);
+    expect(fallbackCalls).toEqual(["https://example.com"]);
+  });
+
+  it("treats a thrown network error the same as a bad response -- still retries then falls back", async () => {
+    let callCount = 0;
+    const fetchImpl: AntiBotFetchImpl = async () => {
+      callCount++;
+      throw new Error("ECONNRESET");
+    };
+    const fallbackFetchSite: FetchSite = async () => "fallback content";
+    const fetchSite = createAntiBotFetchSite({ fetchImpl, backoffMs: 0, retries: 2, fallbackFetchSite });
+
+    expect(await fetchSite("https://example.com")).toBe("fallback content");
+    expect(callCount).toBe(2);
+  });
+
+  it("wired end-to-end via enrichmentProvider('llm-web', {fetchSite}) still tags source:'llm-web', leaving the trust order unaffected", async () => {
+    const client: ClaudeMessagesClient = {
+      messages: {
+        create: async () =>
+          ({
+            content: [
+              {
+                type: "tool_use",
+                name: "emit_enrichment_record",
+                input: { name: "Example Corp", employees: 7, industry: "SaaS", region: "US", tech: ["node"] },
+              },
+            ],
+          }) satisfies ClaudeMessageResult,
+      },
+    };
+    const fetchImpl: AntiBotFetchImpl = async () =>
+      new Response("<html><body>Example Corp site text.</body></html>", { status: 200 });
+    const fetchSite = createAntiBotFetchSite({ fetchImpl, backoffMs: 0 });
+
+    const provider = enrichmentProvider("llm-web", { client, fetchSite });
+    const record = await provider.enrich({ domain: "example.com" });
+
+    expect(record?.source).toBe("llm-web");
+    expect(record?.firmographic.employees).toBe(7);
   });
 });
