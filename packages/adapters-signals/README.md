@@ -13,7 +13,8 @@ nothing downstream touched.
   (`identify`/`track`/`page`/`group`, `batch` supported) with `zod`. Any Segment-spec producer
   (Jitsu, RudderStack, Segment, OpenSnowcat) can POST into whatever route wraps `ingest()`.
 - **`PostHogSource`** (pull, opt-in) — the product-usage connector, over PostHog's REST Events
-  API via an injectable `fetch`.
+  API via an injectable `fetch`. Hardened with opt-in pagination (follow `next` cursor) and
+  bounded exponential backoff on HTTP 429 rate-limit responses.
 - **`GitHubSignalSource`** (pull, opt-in) — public "developer intent" signals (repo stats
   snapshot + recent issues) via an injectable `@octokit/rest` client.
 - **`SqlWarehouseSource`** (pull, opt-in) — bring-your-own-warehouse, over an injected
@@ -27,7 +28,12 @@ import { SampleSource, signalSource } from "@mstack/adapters-signals";
 const sample = new SampleSource();
 const signals = await sample.pull(); // Signal[], zero network/creds -- what mstack seed/demo use
 
-const posthog = signalSource("posthog", { projectId: "12345", apiKey: process.env.POSTHOG_API_KEY });
+const posthog = signalSource("posthog", {
+  projectId: "12345",
+  apiKey: process.env.POSTHOG_API_KEY,
+  enablePagination: true, // follow PostHog's `next` cursor across pages
+  maxRateLimitRetries: 3, // bounded exponential backoff on HTTP 429
+});
 const recent = await posthog.pull({ since: "2026-07-01T00:00:00.000Z", limit: 50 });
 ```
 
@@ -58,6 +64,23 @@ const signals = await warehouse.pull({ since: "2026-06-01T00:00:00.000Z" });
   §5.1) through at registration time.
 - Every network-touching source takes an injectable client (`fetchImpl` / `octokit` / `query`) so
   tests never hit the network — see `src/*.test.ts`.
+
+## Known gaps (design per research/10-sota-integration-design.md §2.4)
+
+This package intentionally stays thin and delegates two critical concerns *upstream* to the CDP/warehouse tier:
+
+1. **No collection tier** — this package pulls signals from PostHog, a warehouse, or a webhook, but does NOT capture them. A user
+   with zero event infrastructure must first stand up an upstream event collection layer. Recommended options (all MIT, self-hostable):
+   - **Jitsu** (MIT, server) — POST-based event collection that maps to the Segment spec. Plug into `SegmentWebhookSource`
+     directly with zero new code.
+   - **PostHog** (MIT, self-hosted) — product-usage snapshots, pulled via `PostHogSource`.
+   - **OpenSnowcat** (Apache-2.0, server) — lightweight event collection compatible with Segment spec.
+
+2. **No identity resolution** — events arrive with `distinct_id` / `userId` fields. Matching users across sources (e.g.,
+   "did GitHub user 'alice' open the same PR as PostHog user 'alice@company.com'?") is the upstream CDP's job — this package
+   preserves whatever identity the source provides. If a CDP offers identity resolution, its unified output (a single user key)
+   lands in `actor.userId` and can be used for signal joining downstream. The `Signal` type has no merge/unification logic by
+   design.
 
 ## API assumptions to confirm on Spark
 
