@@ -1,0 +1,8 @@
+{"id":"out_sample_0001","refType":"draft","refId":"dr_sample_1001","result":"sent","ts":"2026-05-01T14:00:00.000Z"}
+{"id":"out_sample_0002","refType":"draft","refId":"dr_sample_1002","result":"sent","ts":"2026-05-02T11:00:00.000Z"}
+{"id":"out_sample_0003","refType":"draft","refId":"dr_sample_1001","result":"replied","ts":"2026-05-03T09:15:00.000Z","metrics":{"sentiment":"positive","replyChannel":"email"}}
+{"id":"out_sample_0004","refType":"draft","refId":"dr_sample_1003","result":"sent","ts":"2026-05-04T10:00:00.000Z"}
+{"id":"out_sample_0005","refType":"draft","refId":"dr_sample_1004","result":"sent","ts":"2026-05-06T08:00:00.000Z"}
+{"id":"out_sample_0006","refType":"draft","refId":"dr_sample_1003","result":"meeting","ts":"2026-05-09T17:30:00.000Z","metrics":{"meetingAt":"2026-05-14T16:00:00.000Z","bookedVia":"calendly"}}
+{"id":"out_sample_0007","refType":"draft","refId":"dr_sample_1002","result":"no_response","ts":"2026-05-16T00:00:00.000Z","metrics":{"followUpsSent":2}}
+{"id":"out_sample_0008","refType":"draft","refId":"dr_sample_1004","result":"no_response","ts":"2026-05-20T00:00:00.000Z"}
