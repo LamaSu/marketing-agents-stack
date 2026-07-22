@@ -2,6 +2,12 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Signal, Account, Decision, Draft, Outcome, Review } from "@mstack/core";
 import { openMemory } from "@mstack/memory";
 import type { MemoryRepo } from "@mstack/memory";
+// NOTE: report.ts's funnel/tier reports read `drafts.status`, not the `approvals` audit
+// table, for "approved" — but a draft only ever reaches `status:'approved'` in the real
+// system via `DraftStore#approve` -> `MemoryRepo#appendApproval` + `setDraftStatus`
+// together (`draft-store.ts:105-125`). The fixture below calls `appendApproval` alongside
+// `setDraftStatus` for that reason: a realistic warehouse always has both, and this proves
+// the reports still read the right thing even when the fuller (audit-logged) shape is present.
 
 import {
   funnelReport,
@@ -120,17 +126,20 @@ describe("@mstack/analytics — seeded warehouse (funnel counts + conversion rat
     await repo.putDraft(
       Draft.parse({ id: "dr_1", kind: "outreach_email", refId: "acc_1", body: "hi", createdBy: "copywriter", createdAt: now }),
     );
+    // Mirrors DraftStore#approve: appendApproval (hash-chained audit row) + setDraftStatus together.
+    await repo.appendApproval({ id: "appr_1", draftId: "dr_1", decision: "approve", actor: "test-approver", ts: now });
     await repo.setDraftStatus("dr_1", "approved");
     await repo.setDraftStatus("dr_1", "dispatched"); // simulates dispatchDraft's status transition
 
     await repo.putDraft(
       Draft.parse({ id: "dr_2", kind: "outreach_email", refId: "acc_1", body: "hi again", createdBy: "copywriter", createdAt: now }),
     );
-    // dr_2 stays "pending" — never approved.
+    // dr_2 stays "pending" — never approved, no Approval row.
 
     await repo.putDraft(
       Draft.parse({ id: "dr_3", kind: "partner_email", refId: "rev_1", body: "partner note", createdBy: "reviewer", createdAt: now }),
     );
+    await repo.appendApproval({ id: "appr_2", draftId: "dr_3", decision: "approve", actor: "test-approver", ts: now });
     await repo.setDraftStatus("dr_3", "approved");
 
     // Outcomes for dr_1 only: dispatched (sent) + a reply. No meeting outcome anywhere.
