@@ -45,8 +45,8 @@ const now = "2026-07-20T00:00:00.000Z";
 
 /* ────────────────────────────── fixtures ────────────────────────────── */
 
-function need<T>(value: T | undefined, msg: string): T {
-  if (value === undefined) throw new Error(msg);
+function need<T>(value: T | null | undefined, msg: string): T {
+  if (value == null) throw new Error(msg);
   return value;
 }
 
