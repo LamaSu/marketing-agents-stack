@@ -33,8 +33,11 @@ only where a sane offline default exists:
   `fetchImpl` defaults to `globalThis.fetch`; inject a fake in tests.
 - `LlmWebProvider({ client, fetchSite? })` — `client` is **required** (no offline
   default — there's no sane default for "call a paid-tier LLM"); `fetchSite` defaults
-  to a plain `fetch` + tag-strip, or inject a Crawl4AI-backed fetcher for production
-  quality.
+  to a plain `fetch` + tag-strip, or pass `crawl4aiFetchSite` (`crawl4ai.ts`) — backed
+  by a Crawl4AI sidecar for production quality, see `docker/crawl4ai.md` — which itself
+  falls back to the plain-fetch default on any sidecar error (down, timeout, bad
+  response). `createCrawl4aiFetchSite({ baseUrl?, fetchImpl?, timeoutMs?,
+  fallbackFetchSite? })` builds a configured/injectable instance.
 - `checkEmail(email, { resolveMx?, skipMx? })` — `resolveMx` defaults to
   `node:dns/promises` `resolveMx`; inject a fake or pass `skipMx: true`.
 
@@ -104,6 +107,12 @@ against a live call or the installed `@anthropic-ai/sdk` types:
   typing). If a real call-shape mismatch surfaces on the Spark build, widen
   `ClaudeMessageParams`/`ClaudeMessageResult` in `llm-web.ts` — the provider logic
   itself doesn't change.
+- **`crawl4aiFetchSite`'s Crawl4AI sidecar HTTP contract** (`POST {baseUrl}/crawl`,
+  `{urls:[url]}` → `{results:[{success, markdown}]}`, preferring `markdown.fit_markdown`)
+  is coded from Crawl4AI's public Docker-server docs, not a live call — see the
+  ASSUMPTION note in `crawl4ai.ts` and `docker/crawl4ai.md`. Defensive parsing plus the
+  `fallbackFetchSite` (default `defaultFetchSite`) mean a live shape mismatch degrades
+  to the plain-fetch fallback rather than throwing.
 - **`mergeEnrichment` ranks `sample` alongside the CC0 registries** (both rank 0)
   since it stands in for registry-grade ground truth offline; this isn't stated
   explicitly in the architecture doc's `registry(CC0) > llm-web > paid` rule and is
@@ -135,3 +144,11 @@ against a live call or the installed `@anthropic-ai/sdk` types:
 - `LlmWebProvider` extracts a valid `EnrichmentRecord` from a canned `fetchSite` +
   canned Claude tool-use response, and returns `null` when the site is unreachable,
   the model returns no tool-use block, or the extraction fails zod validation.
+- `crawl4aiFetchSite` / `createCrawl4aiFetchSite` parse a canned Crawl4AI `/crawl`
+  response into clean content (preferring `fit_markdown`, falling back to
+  `raw_markdown`/a plain string), and fall back to an injected `fallbackFetchSite` on a
+  non-OK response, a thrown/unreachable fetch, `success:false`, or empty content — all
+  offline. A further end-to-end test wires `crawl4aiFetchSite` into
+  `enrichmentProvider("llm-web", ...)` and confirms the resulting record still tags
+  `source:"llm-web"`, so `mergeEnrichment`'s trust order and per-field provenance are
+  unaffected by the new fetcher.

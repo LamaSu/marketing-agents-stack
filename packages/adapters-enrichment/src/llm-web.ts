@@ -15,9 +15,11 @@
  * Crawl4AI (OSS, Apache-2.0, unclecode/crawl4ai) is the documented opt-in
  * higher-quality fetcher — pass a `fetchSite` that calls out to a local Crawl4AI
  * service instead of the default plain-fetch+strip-tags fetcher for materially better
- * extraction (JS-rendered pages, main-content isolation). Wiring an actual Crawl4AI
- * HTTP client is left to the caller/a later wave; this module only defines the seam
- * (`FetchSite`) it plugs into.
+ * extraction (JS-rendered pages, main-content isolation). `./crawl4ai.js`'s
+ * `crawl4aiFetchSite` is that HTTP client (Wave A1,
+ * research/10-sota-integration-design.md §2.5) — pass it as `fetchSite` for production
+ * quality; it falls back to `defaultFetchSite` below on any sidecar error. This module
+ * still only defines the seam (`FetchSite`) itself.
  *
  * ASSUMPTION (verify on the Spark build — this package was written without running
  * `pnpm install` locally): `client` is typed against a minimal hand-declared

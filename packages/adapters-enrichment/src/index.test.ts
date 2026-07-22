@@ -11,6 +11,8 @@ import {
   GleifProvider,
   EdgarProvider,
   LlmWebProvider,
+  crawl4aiFetchSite,
+  createCrawl4aiFetchSite,
   type ResolveMx,
   type FetchSite,
   type ClaudeMessagesClient,
@@ -425,5 +427,147 @@ describe("LlmWebProvider", () => {
     const fetchSite: FetchSite = async () => "some site text";
     const provider = new LlmWebProvider({ client, fetchSite });
     expect(await provider.enrich({ domain: "example.com" })).toBeNull();
+  });
+});
+
+/* ─────────────────────────── crawl4aiFetchSite ─────────────────────────── */
+
+describe("crawl4aiFetchSite / createCrawl4aiFetchSite", () => {
+  /** Builds a canned `POST /crawl` response body for a single-URL request. */
+  function crawl4aiResponse(markdown: unknown, entryOverrides: Record<string, unknown> = {}): Response {
+    return new Response(
+      JSON.stringify({
+        success: true,
+        results: [{ url: "https://example.com", success: true, markdown, ...entryOverrides }],
+      }),
+      { status: 200 },
+    );
+  }
+
+  it("is exported and directly usable as a FetchSite value (the wiring the design doc shows)", () => {
+    // Not invoked here -- it's built on the real `globalThis.fetch`, so exercising it
+    // would hit the real network. This only proves the exact literal wiring
+    // `enrichmentProvider("llm-web", { client, fetchSite: crawl4aiFetchSite })` type-checks
+    // and resolves to a callable FetchSite, matching research/10-sota-integration-design.md §2.5.
+    expect(typeof crawl4aiFetchSite).toBe("function");
+  });
+
+  it("POSTs {urls:[url]} to <baseUrl>/crawl (trailing slash stripped) and returns Crawl4AI's fit_markdown", async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      calls.push({ url: String(input), body: init?.body ? JSON.parse(String(init.body)) : null });
+      return crawl4aiResponse({
+        raw_markdown: "# nav\n\nExample Corp builds developer tools. [cookie banner] [nav junk]",
+        fit_markdown: "Example Corp builds developer tools.",
+      });
+    };
+    const fetchSite = createCrawl4aiFetchSite({ fetchImpl, baseUrl: "http://sidecar.local:11235/" });
+
+    const text = await fetchSite("https://example.com");
+
+    expect(text).toBe("Example Corp builds developer tools.");
+    expect(calls).toEqual([{ url: "http://sidecar.local:11235/crawl", body: { urls: ["https://example.com"] } }]);
+  });
+
+  it("falls back to raw_markdown when fit_markdown is absent, and accepts a plain string markdown field", async () => {
+    const rawOnly: typeof fetch = async () => crawl4aiResponse({ raw_markdown: "raw only, no fit filter" });
+    const plainString: typeof fetch = async () => crawl4aiResponse("plain markdown string");
+
+    const rawSite = createCrawl4aiFetchSite({ fetchImpl: rawOnly, baseUrl: "http://sidecar.local:11235" });
+    const plainSite = createCrawl4aiFetchSite({ fetchImpl: plainString, baseUrl: "http://sidecar.local:11235" });
+
+    expect(await rawSite("https://example.com")).toBe("raw only, no fit filter");
+    expect(await plainSite("https://example.com")).toBe("plain markdown string");
+  });
+
+  it("falls back to defaultFetchSite (injected, so the test stays offline) on a non-OK sidecar response", async () => {
+    const fetchImpl: typeof fetch = async () => new Response("internal error", { status: 500 });
+    const fallbackCalls: string[] = [];
+    const fallbackFetchSite: FetchSite = async (url) => {
+      fallbackCalls.push(url);
+      return "fallback content";
+    };
+    const fetchSite = createCrawl4aiFetchSite({ fetchImpl, baseUrl: "http://sidecar.local:11235", fallbackFetchSite });
+
+    const text = await fetchSite("https://example.com");
+
+    expect(text).toBe("fallback content");
+    expect(fallbackCalls).toEqual(["https://example.com"]);
+  });
+
+  it("falls back to defaultFetchSite (injected) when the sidecar is unreachable (fetch throws)", async () => {
+    const fetchImpl: typeof fetch = async () => {
+      throw new Error("ECONNREFUSED");
+    };
+    const fallbackFetchSite: FetchSite = async () => "fallback content";
+    const fetchSite = createCrawl4aiFetchSite({ fetchImpl, baseUrl: "http://sidecar.local:11235", fallbackFetchSite });
+
+    expect(await fetchSite("https://example.com")).toBe("fallback content");
+  });
+
+  it("falls back to defaultFetchSite (injected) on success:false or empty/whitespace-only content", async () => {
+    const reportsFailure: typeof fetch = async () =>
+      crawl4aiResponse(undefined, { success: false, error_message: "render timeout" });
+    const emptyContent: typeof fetch = async () => crawl4aiResponse("   ");
+    const fallbackFetchSite: FetchSite = async () => "fallback content";
+
+    const failureSite = createCrawl4aiFetchSite({
+      fetchImpl: reportsFailure,
+      baseUrl: "http://sidecar.local:11235",
+      fallbackFetchSite,
+    });
+    const emptySite = createCrawl4aiFetchSite({
+      fetchImpl: emptyContent,
+      baseUrl: "http://sidecar.local:11235",
+      fallbackFetchSite,
+    });
+
+    expect(await failureSite("https://example.com")).toBe("fallback content");
+    expect(await emptySite("https://example.com")).toBe("fallback content");
+  });
+
+  it("wired end-to-end via enrichmentProvider('llm-web', {fetchSite}) still tags source:'llm-web', leaving mergeEnrichment's registry>llm-web>paid trust order and per-field provenance unaffected", async () => {
+    const client: ClaudeMessagesClient = {
+      messages: {
+        create: async () =>
+          ({
+            content: [
+              {
+                type: "tool_use",
+                name: "emit_enrichment_record",
+                input: { name: "Example Corp", employees: 42, industry: "SaaS", region: "US", tech: ["typescript"] },
+              },
+            ],
+          }) satisfies ClaudeMessageResult,
+      },
+    };
+    const crawl4aiCalls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      crawl4aiCalls.push(String(input));
+      return crawl4aiResponse({ fit_markdown: "Example Corp builds developer tools for TypeScript teams." });
+    };
+    const fetchSite = createCrawl4aiFetchSite({ fetchImpl, baseUrl: "http://sidecar.local:11235" });
+
+    const provider = enrichmentProvider("llm-web", { client, fetchSite });
+    const llmRecord = await provider.enrich({ domain: "example.com" });
+
+    // crawl4ai only changes *how* llm-web fetches site text -- the resulting record's
+    // `source` (what mergeEnrichment ranks by) is unchanged.
+    expect(llmRecord?.source).toBe("llm-web");
+    expect(crawl4aiCalls).toEqual(["http://sidecar.local:11235/crawl"]);
+    expect(llmRecord).not.toBeNull();
+
+    const wikidataRecord: EnrichmentRecord = {
+      domain: "example.com",
+      name: "Example Corp (registry)",
+      firmographic: { employees: 999, industry: "Software", region: "US", tech: [] },
+      provenance: { employees: "wikidata", industry: "wikidata", region: "wikidata" },
+      source: "wikidata",
+    };
+    const merged = mergeEnrichment([llmRecord as EnrichmentRecord, wikidataRecord]);
+    expect(merged?.firmographic.employees).toBe(999); // registry still wins -- trust order untouched
+    expect(merged?.provenance.employees).toBe("wikidata");
+    expect(merged?.firmographic.tech).toEqual(["typescript"]); // llm-web still wins fields the registry lacks
+    expect(merged?.provenance.tech).toBe("llm-web");
   });
 });
