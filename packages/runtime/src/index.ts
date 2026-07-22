@@ -10,6 +10,7 @@
  */
 export * from "./dispatch.js";
 export * from "./draft-store.js";
+export * from "./approver-notifier.js";
 export * from "./channels.js";
 export * from "./approve-and-dispatch.js";
 export * from "./workflows/content-review.js";

@@ -19,7 +19,8 @@
     "@mstack/core": "workspace:*",
     "@mstack/memory": "workspace:*",
     "@mstack/credentials": "workspace:*",
-    "@hatchet-dev/typescript-sdk": "^1.26.2"
+    "@hatchet-dev/typescript-sdk": "^1.26.2",
+    "@humanlayer/sdk": "^0.7.9"
   },
   "devDependencies": {
     "vitest": "^2.1.0",

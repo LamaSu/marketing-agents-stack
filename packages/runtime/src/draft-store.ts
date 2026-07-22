@@ -8,6 +8,14 @@
  * computation — see `@mstack/memory`'s `memory-repo.ts`; this class deliberately does not
  * duplicate that logic) and then flip the draft's status. Neither method ever calls a
  * channel — that is `dispatch.ts`'s job alone, downstream of `approve()`.
+ *
+ * ADDITIVE (Wave C4, research/10-sota-integration-design.md §2.9): `save()` may ring an
+ * optional `ApproverNotifier` (default `noopApproverNotifier`) AFTER the pending draft is
+ * persisted — a best-effort "a draft is pending" DOORBELL (e.g. HumanLayer Slack/email).
+ * It is the doorbell, NOT the ledger: it cannot approve, dispatch, or change status, and
+ * a throwing/hanging notifier is swallowed so it can never affect the persisted draft or
+ * the approval gate. The record is still `approve()`'s hash-chained `Approval`; the only
+ * send is still `dispatch.ts`. Default is the no-op, so the offline path is unchanged.
  */
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,6 +23,9 @@ import { join } from "node:path";
 import { Draft, newId, nowIso } from "@mstack/core";
 import type { Approval } from "@mstack/core";
 import type { MemoryRepo } from "@mstack/memory";
+
+import { noopApproverNotifier } from "./approver-notifier.js";
+import type { ApproverNotifier } from "./approver-notifier.js";
 
 const DEFAULT_DRAFTS_DIR = "./drafts";
 
@@ -25,10 +36,21 @@ function resolveDraftsDir(explicit?: string): string {
 export class DraftStore {
   readonly #memory: MemoryRepo;
   readonly #draftsDir: string;
+  readonly #notifier: ApproverNotifier;
 
-  constructor(memory: MemoryRepo, draftsDir?: string) {
+  /**
+   * @param notifier OPTIONAL "a draft is pending" doorbell, rung by `save()` after the
+   *   draft is persisted. Defaults to `noopApproverNotifier` (does nothing) so existing
+   *   callers and the offline demo are unchanged. Never part of the approval gate.
+   */
+  constructor(
+    memory: MemoryRepo,
+    draftsDir?: string,
+    notifier: ApproverNotifier = noopApproverNotifier,
+  ) {
     this.#memory = memory;
     this.#draftsDir = resolveDraftsDir(draftsDir);
+    this.#notifier = notifier;
   }
 
   /**
@@ -42,6 +64,19 @@ export class DraftStore {
     const parsed = Draft.parse({ ...draft, status: "pending" });
     await this.#memory.putDraft(parsed);
     await this.#writeDraftFile(parsed);
+    // Best-effort DOORBELL (opt-in `ApproverNotifier`; default no-op => offline unchanged).
+    // The draft is ALREADY the system of record above; notifying is supplementary and is
+    // wrapped so a throwing/hanging notifier can NEVER undo a safely-`pending` draft or
+    // touch the approval gate. HumanLayer is the doorbell, not the ledger — `approve()`/
+    // `reject()` below and `dispatch.ts` remain the record + the only send path.
+    try {
+      await this.#notifier.notifyPending(parsed);
+    } catch (err) {
+      console.warn(
+        `[@mstack/runtime] DraftStore.save: approver notifier threw for draft "${parsed.id}" ` +
+          `(${String(err)}); the draft is safely pending regardless (doorbell, not ledger).`,
+      );
+    }
     return parsed;
   }
 
