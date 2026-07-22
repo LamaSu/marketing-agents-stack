@@ -48,6 +48,14 @@
  * they are pure derivations from `memory` + the injected agent function; step 6/7
  * (HITL_APPROVAL) blocks indefinitely and is never retried by chorus itself — it waits on a
  * human; the final dispatch step is retried-but-idempotent as noted above.
+ *
+ * CONCRETE ENGINE BINDING: this file stays a chorus-shaped note, but the step-function boundary
+ * it describes is engine-agnostic, and the adopted production engine is now Hatchet — see
+ * `executor.ts` (the `Executor` seam + `DirectExecutor`, the offline default) and
+ * `hatchet-executor.ts` (`registerRuntimeWorkflows` binds these same three functions as Hatchet
+ * tasks; `HatchetExecutor` triggers them). chorus and Hatchet are interchangeable engines over
+ * the identical step functions — swapping the engine changes nothing about the step logic, and
+ * neither engine is ever a send path (`dispatch.ts#dispatchDraft` stays the only one).
  */
 
 /** Illustrative only — see file header. Not chorus's real step-registration type. */

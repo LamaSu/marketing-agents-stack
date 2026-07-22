@@ -15,7 +15,7 @@ import { ActivateAccount } from "@mstack/core";
 import type { Draft } from "@mstack/core";
 import { SampleProvider } from "@mstack/adapters-enrichment";
 import { RulesScorer } from "@mstack/adapters-scoring";
-import { runAccountActivation, runContentReview } from "@mstack/runtime";
+import { DirectExecutor, RUNTIME_WORKFLOW_NAMES, runAccountActivation, runContentReview } from "@mstack/runtime";
 import { loadReviewRequests } from "@mstack/reviewer";
 
 import type { CliContext } from "./context.js";
@@ -68,6 +68,12 @@ async function countOutboxSends(outboxDir: string): Promise<number> {
 export async function runDemo(ctx: CliContext): Promise<DemoResult> {
   const { memory, draftStore, mode } = ctx;
 
+  // The offline default durable-execution seam (research/10 §2.7): DirectExecutor runs each step
+  // in-process — no Postgres, no Hatchet, no network — so the keyless demo needs nothing external.
+  // A deployer swaps in HatchetExecutor for retries/scheduling/crash-resume without changing any
+  // call site here (both executors run the identical step function).
+  const executor = new DirectExecutor();
+
   /* ── content-review ─────────────────────────────────────────────────── */
   const reviewFn =
     mode === "live"
@@ -77,7 +83,9 @@ export async function runDemo(ctx: CliContext): Promise<DemoResult> {
   const requests = await loadReviewRequests();
   const reviews: ReviewSummary[] = [];
   for (const req of requests) {
-    const { review } = await runContentReview(req, { reviewFn, memory, draftStore });
+    const { review } = await executor.run(RUNTIME_WORKFLOW_NAMES.contentReview, req, (r) =>
+      runContentReview(r, { reviewFn, memory, draftStore }),
+    );
     const findingsByCategory: Record<string, number> = {};
     for (const f of review.findings) {
       findingsByCategory[f.category] = (findingsByCategory[f.category] ?? 0) + 1;
@@ -102,7 +110,12 @@ export async function runDemo(ctx: CliContext): Promise<DemoResult> {
   const decisions: DecisionSummary[] = [];
   for (const account of DEMO_ACCOUNTS) {
     const input = ActivateAccount.parse({ accountRef: account, mode: "copilot" });
-    const { decision } = await runAccountActivation(input, { activateFn, memory, draftStore });
+    // Each account activation is a separately-named durable run under HatchetExecutor — which is
+    // what makes "a killed 10k-account batch resumes from the last completed account" work in
+    // production. Under the DirectExecutor default it is just an in-process call, as before.
+    const { decision } = await executor.run(RUNTIME_WORKFLOW_NAMES.accountActivation, input, (i) =>
+      runAccountActivation(i, { activateFn, memory, draftStore }),
+    );
     decisions.push({
       domain: account.domain,
       accountId: decision.accountId,

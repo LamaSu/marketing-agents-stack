@@ -35,6 +35,60 @@ status back to `'approved'` and a retried `approveAndDispatch` would dispatch it
 `'dispatched'` is a terminal state; every other transition (including approving after an
 earlier rejection, or retrying an approve that didn't reach dispatch) stays allowed.
 
+## Durable execution — the `Executor` seam (Hatchet, opt-in)
+
+The two workflows and `approveAndDispatch` are plain `async` functions: input in, result out.
+*Where* they run is a swap behind one small seam (`src/executor.ts`):
+
+```ts
+interface Executor {
+  run<I, O>(name: string, input: I, step: (input: I) => Promise<O>): Promise<O>;
+}
+```
+
+- **`DirectExecutor` (the default).** `run(name, input, step)` is exactly `step(input)` — in-process,
+  no scheduling, no persistence, no network. It is behavior-identical to calling the workflow
+  function directly, which is what `mstack demo` does, so **the keyless demo needs no Postgres and
+  no Hatchet.** This is the offline path, and it stays the default.
+- **`HatchetExecutor` (opt-in).** Adopts [Hatchet](https://github.com/hatchet-dev/hatchet) (MIT,
+  Postgres-native durable execution — `@hatchet-dev/typescript-sdk`) as the production engine.
+  `registerRuntimeWorkflows(hatchet, deps)` registers `runContentReview` / `runAccountActivation` /
+  `approveAndDispatch` as Hatchet tasks (each task's body *is* the step function), and
+  `HatchetExecutor.run(...)` triggers them. Hatchet then owns retry / backoff / scheduling and —
+  the point — **crash-resume**: a nightly 10k-account batch that dies at account 7,000 resumes
+  from the last completed account instead of redoing everything. Triggers (webhook / cron / manual)
+  map onto Hatchet's; the HITL approval step stays human-owned *outside* the retry loop (the UI
+  still calls `DraftStore#approve` directly).
+
+Hatchet **wraps** the step functions; it does **not** replace the send path. `dispatchDraft`
+(below) remains the single, gated, hash-chain-verified way a `Draft` reaches `dispatched` —
+adopting a durable engine adds no new way to send.
+
+The SDK is a heavyweight gRPC client, so it is never imported on the offline path: the executor is
+written against a small structural interface (`HatchetLike`), and `createHatchetExecutor()` loads
+the real SDK lazily via a dynamic `import(...)`. A deployer's opt-in worker entrypoint looks like:
+
+```ts
+import { openMemory } from "@mstack/memory";
+import {
+  DraftStore, LocalOutreachChannel, createHatchetExecutor, registerRuntimeWorkflows,
+} from "@mstack/runtime";
+
+const executor = await createHatchetExecutor();        // loads @hatchet-dev/typescript-sdk here only
+const memory = await openMemory();
+const deps = { memory, draftStore: new DraftStore(memory), reviewFn, activateFn,
+               channel: new LocalOutreachChannel() };
+const wf = registerRuntimeWorkflows(executor.client, deps);
+await wf.startWorker();                                 // serves all three tasks (needs Hatchet + Postgres)
+```
+
+**At-least-once + crash-resume is safe here because the steps are idempotent against the system of
+record.** `DraftStore#approve` and `dispatchDraft` both refuse a draft already in
+`status:'dispatched'`, so a re-delivered `approveAndDispatch` / `dispatchDraft` (a retry, or a run
+re-executed after a crash) cannot double-send. The offline tests (`executor.test.ts`) assert exactly
+this idempotency with a mock Hatchet client; the **real crash-resume behaviour is validated only
+when a deployer runs Hatchet + Postgres** — there is no Hatchet server or Postgres in CI, by design.
+
 ## Pieces
 
 | File | Produces |
@@ -45,7 +99,9 @@ earlier rejection, or retrying an approve that didn't reach dispatch) stays allo
 | `approve-and-dispatch.ts` | `approveAndDispatch`, `rejectDraft` — the human-gated completion |
 | `workflows/content-review.ts` | `runContentReview` — reviewFn → persist Review → 2 pending drafts |
 | `workflows/account-activation.ts` | `runAccountActivation` — activateFn → persist Decision → 1 pending draft |
-| `chorus-adapter.ts` | documentation-only note on how the above register as chorus steps |
+| `executor.ts` | `Executor` seam + `DirectExecutor` (the offline default `mstack demo` runs on) |
+| `hatchet-executor.ts` | `HatchetExecutor` + `registerRuntimeWorkflows` + `createHatchetExecutor` — opt-in Hatchet durable engine |
+| `chorus-adapter.ts` | documentation-only note on how the above register as chorus/Hatchet steps |
 
 Both workflow functions take their agent pipeline **injected** (`reviewFn` / `activateFn`) —
 this package does not depend on `@mstack/reviewer` or `@mstack/account-intel`, so it stays

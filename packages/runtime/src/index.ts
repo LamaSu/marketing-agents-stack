@@ -14,4 +14,6 @@ export * from "./channels.js";
 export * from "./approve-and-dispatch.js";
 export * from "./workflows/content-review.js";
 export * from "./workflows/account-activation.js";
+export * from "./executor.js";
+export * from "./hatchet-executor.js";
 export * from "./chorus-adapter.js";
