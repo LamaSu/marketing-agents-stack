@@ -24,7 +24,14 @@ export type PartnerTier = z.infer<typeof PartnerTier>;
 export const AccountTier = z.enum(["STRONG_FIT", "FIT", "PARTIAL_FIT", "DISQUALIFIED"]);
 export type AccountTier = z.infer<typeof AccountTier>;
 
-/** The six claim-drift / brand-violation categories (from the Portal demo). */
+/** The claim-drift / brand-violation / data-exposure categories (from the Portal
+ *  demo). The first six are the original Portal-demo set; `pii_leak` is
+ *  ADDITIVE (Wave-B/B2, research/10-sota-integration-design.md §2.2) for the
+ *  deterministic PII pre-scan (`packages/reviewer/src/rules.ts`'s `scanPii` /
+ *  opt-in `presidioScan`). It is never a category the extractor/judge classifies
+ *  a CLAIM into (PII detection is a structural pattern match, not a judgment
+ *  call) -- see the "six categories" language still in review-agent.ts's
+ *  EXTRACT_SYSTEM/JUDGE_SYSTEM/AUTHOR_SYSTEM prompts, which is intentional. */
 export const ClaimCategory = z.enum([
   "guaranteed_outcome",
   "uncited_quantitative",
@@ -32,6 +39,7 @@ export const ClaimCategory = z.enum([
   "unapproved_spokesperson_quote",
   "roadmap_disclosure",
   "badge_tier_misuse",
+  "pii_leak",
 ]);
 export type ClaimCategory = z.infer<typeof ClaimCategory>;
 
@@ -180,7 +188,7 @@ export type Claim = z.infer<typeof Claim>;
 /** One entry of the north-star corpus / rule-set. */
 export const Guideline = z.object({
   id: z.string(),
-  category: z.string(), // free-form grouping; the six ClaimCategory values are common
+  category: z.string(), // free-form grouping; the ClaimCategory values are common
   type: GuidelineType,
   content: z.string(),
   severity: Severity.default("medium"),

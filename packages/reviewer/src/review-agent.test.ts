@@ -196,6 +196,7 @@ describe("reviewAsset — the Claude agent pipeline, offline (fake client + fake
       "supportingPassageId",
       "detectedBy",
       "severity",
+      "needsReview", // Wave B2: NLI-backstop review flag -- a boolean, never prose
     ]);
     expect(result.findings.length).toBeGreaterThan(0);
     for (const f of result.findings) {
@@ -206,6 +207,80 @@ describe("reviewAsset — the Claude agent pipeline, offline (fake client + fake
       // and it never reproduces the asset's promotional copy verbatim
       expect(f.recommendedChange).not.toContain("no other platform on the market comes close");
     }
+  });
+
+  /* ── grounded-NLI backstop (Wave B2): disagreement flips detectedBy + needsReview ── */
+
+  it("an injected fake HHEM-style backstop that disagrees with the judge flips a finding to detectedBy:'nli' + needsReview:true", async () => {
+    const abc = asset("ABC Corp");
+    const extract = text(
+      JSON.stringify({
+        claims: [
+          { text: "KLZ Orchestrate guarantees a 10x ROI in the first year", category: "guaranteed_outcome", checkWorthy: true },
+        ],
+      }),
+    );
+    const judgeResp = text(
+      JSON.stringify({
+        findings: [
+          {
+            category: "guaranteed_outcome",
+            required: true,
+            quote: "guarantees a 10x ROI",
+            recommendedChange: "Remove the guarantee language; cite a customer-reported result or drop the claim.",
+            supportingPassageId: null,
+            detectedBy: "claude",
+            severity: "high",
+          },
+        ],
+        summary: "One required change: an unqualified guarantee.",
+      }),
+    );
+    const client = new FakeClient([extract, judgeResp]);
+
+    // A fake grounded-NLI backstop that always DISAGREES with the judge (finds
+    // entailment where the judge found none) -- stands in for a real HHEM sidecar.
+    const disagreeingBackstop = { entails: async () => ({ supported: true, score: 0.91 }) };
+
+    const result = await reviewAsset(abc, { corpus, client, nliBackstop: disagreeingBackstop });
+
+    const flagged = result.findings.find((f) => f.quote === "guarantees a 10x ROI");
+    expect(flagged).toBeDefined();
+    expect(flagged?.detectedBy).toBe("nli");
+    expect(flagged?.needsReview).toBe(true);
+    expect(typeof flagged?.needsReview).toBe("boolean"); // review metadata, not generated prose -- guardrail #1 intact
+  });
+
+  it("the default (no injected nliBackstop) leaves every finding's detectedBy exactly as the judge produced, with no needsReview key at all -- the no-op path changes nothing", async () => {
+    const abc = asset("ABC Corp");
+    const extract = text(
+      JSON.stringify({
+        claims: [{ text: "KLZ Orchestrate guarantees a 10x ROI", category: "guaranteed_outcome", checkWorthy: true }],
+      }),
+    );
+    const judgeResp = text(
+      JSON.stringify({
+        findings: [
+          {
+            category: "guaranteed_outcome",
+            required: true,
+            quote: "guarantees a 10x ROI",
+            recommendedChange: "Remove the guarantee language.",
+            supportingPassageId: null,
+            detectedBy: "claude",
+            severity: "high",
+          },
+        ],
+        summary: "One required change.",
+      }),
+    );
+    const client = new FakeClient([extract, judgeResp]);
+
+    const result = await reviewAsset(abc, { corpus, client }); // no nliBackstop -- defaults to noopNliBackstop
+
+    const finding = result.findings.find((f) => f.quote === "guarantees a 10x ROI");
+    expect(finding?.detectedBy).toBe("claude");
+    expect("needsReview" in (finding ?? {})).toBe(false);
   });
 
   /* ── authorGuidelines: brand brief → core Guideline[] via a sonnet call ──── */

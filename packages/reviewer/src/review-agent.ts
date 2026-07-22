@@ -17,6 +17,14 @@
  *                                         drifted | unsupported, cite a
  *                                         `supportingPassageId` or null, set
  *                                         `severity` + a targeted `recommendedChange`.
+ *   5a. NLI backstop   (TS, nli-backstop.ts) — WAVE B2 addition (research/
+ *                                         10-sota-integration-design.md §2.2):
+ *                                         every judge finding gets a grounded,
+ *                                         model-independent second opinion. On
+ *                                         DISAGREEMENT the finding is
+ *                                         re-attributed `detectedBy:'nli'` +
+ *                                         `needsReview:true`. Default `noopNliBackstop`
+ *                                         always agrees -- fully offline, no-op.
  *   5b. merge          (TS)              — the deterministic priors are merged in
  *                                         (deduped by category+quote); the priors
  *                                         are authoritative for the mechanical
@@ -59,6 +67,8 @@ import { runAgent } from "@mstack/agents";
 import type { AnthropicClient, ContextBlock } from "@mstack/agents";
 
 import { scanDeterministic } from "./rules.js";
+import { noopNliBackstop } from "./nli-backstop.js";
+import type { NliBackstop } from "./nli-backstop.js";
 
 /* ─────────────────────────────── deps ─────────────────────────────────── */
 
@@ -75,6 +85,11 @@ export interface ReviewAgentDeps {
   /** model-id overrides; default to the core `modelFor` routing (extractor →
    *  sonnet reasoner, judge → opus reviewerJudge). */
   models?: { extractor?: string; judge?: string };
+  /** grounded-NLI second opinion on every judge finding (research/
+   *  10-sota-integration-design.md §2.2, Wave B2). Default `noopNliBackstop` —
+   *  agrees with the judge unconditionally, fully offline, no sidecar. Inject
+   *  `hhemBackstop` (nli-backstop.ts) to turn on the real HHEM sidecar. */
+  nliBackstop?: NliBackstop;
 }
 
 /** Deps for `authorGuidelines` — just the injectable client + optional model. */
@@ -280,21 +295,107 @@ async function judge(
   });
 }
 
+/* ─────────────────── step 5a: grounded-NLI backstop (Wave B2) ─────────────────── */
+
+/** A judge/prior `FindingDraft` plus an optional NLI-backstop flag (research/
+ *  10-sota-integration-design.md §2.2, Wave B2). `needsReview` is present ONLY
+ *  when the grounded-NLI backstop DISAGREED with the judge's implicit verdict
+ *  (the judge treated the claim as a violation; the backstop finds it IS
+ *  entailed by the best available passage) — absent entirely otherwise, so
+ *  every existing consumer that only reads the original 8 `FindingDraft` keys
+ *  is byte-for-byte unaffected. Additive-only: this does NOT change core's
+ *  `FindingDraft` schema — guardrail #1 (no generated-prose field) is
+ *  unaffected, `needsReview` is a boolean review-metadata flag. */
+export const NliFindingDraft = FindingDraft.extend({ needsReview: z.boolean().optional() });
+export type NliFindingDraft = z.infer<typeof NliFindingDraft>;
+
+/** `ReviewResult` with `findings: NliFindingDraft[]` instead of core's
+ *  `FindingDraft[]`, so the optional `needsReview` flag survives the final
+ *  validation instead of being stripped by zod's default "strip unknown keys"
+ *  behavior on core's stricter shape. Structurally still a `ReviewResult`
+ *  (every consumer that only reads the core shape — e.g. `buildReviewDrafts`
+ *  below — keeps working unchanged; TS structural typing accepts the wider
+ *  finding shape wherever the narrower one is expected). */
+export const ReviewResultWithNli = ReviewResult.extend({ findings: z.array(NliFindingDraft) });
+export type ReviewResultWithNli = z.infer<typeof ReviewResultWithNli>;
+
+/** Locates the best passage text to check a judge finding's claim against:
+ *  the passage it actually cited (`supportingPassageId`) — the core backstop
+ *  use case, double-checking a citation the judge relied on — or, for a fully
+ *  unsupported finding (`supportingPassageId: null`), the top retrieved
+ *  passage for whichever claim this finding's quote came from, so the
+ *  backstop can independently double-check "was there really nothing." Falls
+ *  back to `""` (nothing to compare against) when neither resolves; every
+ *  `NliBackstop` impl (including the default `noopNliBackstop`) treats an
+ *  empty passage the same as "no evidence." */
+function findPassageForFinding(finding: FindingDraft, evidence: ClaimEvidence[]): string {
+  if (finding.supportingPassageId) {
+    for (const { passages } of evidence) {
+      const hit = passages.find((p) => p.id === finding.supportingPassageId);
+      if (hit) return hit.content;
+    }
+  }
+  const quote = finding.quote.toLowerCase();
+  const byClaim = evidence.find(({ claim }) => {
+    const claimText = claim.text.toLowerCase();
+    return quote.includes(claimText) || claimText.includes(quote);
+  });
+  return byClaim?.passages[0]?.content ?? "";
+}
+
+/**
+ * Runs every judge finding through the grounded-NLI backstop (research/
+ * 10-sota-integration-design.md §2.2, Wave B2). Every judge finding IS, by
+ * this schema's construction, a claim the judge marked unsupported or drifted
+ * (a claim the judge considers supported never becomes a finding at all — see
+ * `JUDGE_SYSTEM` above), so no separate "which findings are unsupported/
+ * drifted" filter is needed here — all of `judged.findings` qualify.
+ *
+ * On DISAGREEMENT (the backstop finds the claim IS entailed by the best
+ * available passage, contradicting the judge) the finding is re-attributed
+ * `detectedBy: "nli"` and flagged `needsReview: true` for a human to resolve.
+ * On agreement — the default `noopNliBackstop`'s only possible outcome — the
+ * finding is returned unchanged, so this step is a true no-op end to end
+ * unless a real backstop is injected. Deterministic priors are NOT passed
+ * through this step (mechanical categories, incl. `pii_leak`, are not
+ * judge-produced claims to double-check).
+ */
+async function applyNliBackstop(
+  findings: FindingDraft[],
+  evidence: ClaimEvidence[],
+  backstop: NliBackstop,
+): Promise<NliFindingDraft[]> {
+  const out: NliFindingDraft[] = [];
+  for (const f of findings) {
+    const passage = findPassageForFinding(f, evidence);
+    const verdict = await backstop.entails(f.quote, passage);
+    out.push(
+      verdict.supported
+        ? NliFindingDraft.parse({ ...f, detectedBy: "nli", needsReview: true })
+        : NliFindingDraft.parse(f),
+    );
+  }
+  return out;
+}
+
 /* ───────────────────────── step 5b: merge ─────────────────────────────── */
 
-/** Deterministic priors ∪ judge findings, deduped by category + quote. Priors
- *  come first so a mechanical finding wins over a judge duplicate of the same
- *  violation (same key as rules.ts's own `dedupe`). The priors are
- *  authoritative for the mechanical categories: they survive even if the judge
- *  drops one. */
-function mergeFindings(priors: FindingDraft[], judged: FindingDraft[]): FindingDraft[] {
+/** Deterministic priors ∪ NLI-checked judge findings, deduped by category +
+ *  quote. Priors come first so a mechanical finding wins over a judge
+ *  duplicate of the same violation (same key as rules.ts's own `dedupe`). The
+ *  priors are authoritative for the mechanical categories: they survive even
+ *  if the judge drops one. Priors never carry `needsReview` (they never go
+ *  through `applyNliBackstop`); routing everything through `NliFindingDraft`
+ *  here is just a uniform validation pass — the key is absent on every prior
+ *  either way, identical to before this feature existed. */
+function mergeFindings(priors: FindingDraft[], judged: NliFindingDraft[]): NliFindingDraft[] {
   const seen = new Set<string>();
-  const out: FindingDraft[] = [];
+  const out: NliFindingDraft[] = [];
   for (const f of [...priors, ...judged]) {
     const key = `${f.category} ${f.quote.toLowerCase()}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(FindingDraft.parse(f));
+    out.push(NliFindingDraft.parse(f));
   }
   return out;
 }
@@ -307,7 +408,7 @@ function mergeFindings(priors: FindingDraft[], judged: FindingDraft[]): FindingD
  * rubric score, a verdict, and a reviewer summary note. Reviews and tracks;
  * never generates content (guardrail #1).
  */
-export async function reviewAsset(req: ReviewRequest, deps: ReviewAgentDeps): Promise<ReviewResult> {
+export async function reviewAsset(req: ReviewRequest, deps: ReviewAgentDeps): Promise<ReviewResultWithNli> {
   const request = ReviewRequest.parse(req); // validate inbound (§3.0)
 
   // 2. deterministic pre-scan → high-confidence priors
@@ -326,15 +427,19 @@ export async function reviewAsset(req: ReviewRequest, deps: ReviewAgentDeps): Pr
   // 5. judge & ground (Opus)
   const judged = await judge(request, priors, rules, evidence, deps);
 
+  // 5a. grounded-NLI backstop — model-independent second opinion on every judge
+  // finding (Wave B2). Default `noopNliBackstop`: fully offline, changes nothing.
+  const nliChecked = await applyNliBackstop(judged.findings, evidence, deps.nliBackstop ?? noopNliBackstop);
+
   // 5b. merge the deterministic priors in
-  const findings = mergeFindings(priors, judged.findings);
+  const findings = mergeFindings(priors, nliChecked);
 
   // 6. score & emit — changesCount = required findings; score via the core rubric
   const changesCount = findings.filter((f) => f.required).length;
   const score = scoreForChanges(changesCount);
   const verdict = changesCount > 0 ? "RETURNED" : "APPROVED";
 
-  return ReviewResult.parse({
+  return ReviewResultWithNli.parse({
     score,
     changesCount,
     verdict,

@@ -16,9 +16,14 @@
  * The corpus + rule layer below is agent-agnostic (no Anthropic SDK); the
  * agent code is isolated in `review-agent.ts` so the corpus layer can be used
  * (and tested) without a Claude key.
+ *
+ * `nli-backstop.ts` (Wave B2) is the injectable grounded-NLI second opinion
+ * `review-agent.ts`'s judge step calls; `rules.ts`'s `scanPii`/`presidioScan`
+ * are the deterministic/opt-in-sidecar halves of the `pii_leak` category.
  */
 export * from "./embedder.js";
 export * from "./lance-corpus.js";
 export * from "./rules.js";
 export * from "./corpus-loader.js";
+export * from "./nli-backstop.js";
 export * from "./review-agent.js";

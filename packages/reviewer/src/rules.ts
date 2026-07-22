@@ -39,6 +39,12 @@
  * `supportingPassageId: null` — this layer never retrieves; that's
  * `LanceCorpus.retrieve()` (lance-corpus.ts), called downstream in the judge
  * step to find supporting evidence for claims this layer does NOT flag.
+ *
+ * WAVE B2 ADDITION (research/10-sota-integration-design.md §2.2): a `pii_leak`
+ * category (core `ClaimCategory`, additive) with its own always-on inline
+ * regex scan (`scanPii`, §9 below) plus an opt-in higher-recall Presidio
+ * sidecar (`presidioScan`, never called by `scanDeterministic` by default) —
+ * same "structural pattern, not a lexicon" shape as the inline secret pass.
  */
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
@@ -501,6 +507,57 @@ function scanInlineSecrets(text: string): FindingDraft[] {
   return findings;
 }
 
+/* ─────────────────── 9. inline PII pass (always-on, offline default) ───────────────── */
+/* research/10-sota-integration-design.md §2.2 (Wave B2): a `pii_leak` category
+ * (core/schemas.ts `ClaimCategory`, additive) with a lightweight, dependency-free
+ * regex scan as the OFFLINE DEFAULT -- the same "always-on inline pass" shape as
+ * the "8. inline secret pass" above, but for personally-identifiable data rather
+ * than credentials: email addresses, SSNs, phone numbers, credit-card numbers.
+ * Every pattern favors precision (delimited/structured shapes) over a bare
+ * digit-run match, so it doesn't fire on ordinary numbers, percentages, or dates
+ * already present in partner content -- verified against all four
+ * `data/corpus/assets/assets.json` fixtures (none contain an "@", a dashed SSN,
+ * a delimited phone number, or a card-shaped digit run, so this pass adds
+ * nothing to any of them; see rules.test.ts).
+ *
+ * The opt-in `presidioScan` below trades this pass's precision for Presidio's
+ * NER-based recall over a Python sidecar; it is NEVER called by
+ * `scanDeterministic` by default -- same opt-in discipline as
+ * `runGitleaksIfAvailable`. */
+const PII_PATTERNS: ReadonlyArray<{ label: string; severity: FindingDraft["severity"]; re: RegExp }> = [
+  { label: "email address", severity: "medium", re: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g },
+  { label: "Social Security Number", severity: "high", re: /\b\d{3}-\d{2}-\d{4}\b/g },
+  { label: "phone number", severity: "medium", re: /\b(?:\+?1[-.\s])?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b/g },
+  {
+    label: "credit card number",
+    severity: "high",
+    re: /\b(?:4\d{3}|5[1-5]\d{2}|3[47]\d{2}|6011)[- ]?\d{4}[- ]?\d{4}[- ]?\d{2,4}\b/g,
+  },
+];
+
+function scanPii(text: string): FindingDraft[] {
+  const findings: FindingDraft[] = [];
+  for (const { label, severity, re } of PII_PATTERNS) {
+    const pattern = new RegExp(re); // fresh lastIndex per call
+    let m: RegExpExecArray | null;
+    while ((m = pattern.exec(text)) !== null) {
+      const matched = group(m, 0);
+      const start = m.index;
+      const end = start + matched.length;
+      findings.push(
+        draft({
+          category: "pii_leak",
+          quote: matched,
+          span: { start, end },
+          recommendedChange: `Remove or redact this ${label} before publishing; partner content must not expose personal data.`,
+          severity,
+        }),
+      );
+    }
+  }
+  return findings;
+}
+
 /* ───────────────────────────── orchestrator ─────────────────────────────── */
 
 /** Same category firing on the exact same quoted text more than once
@@ -539,6 +596,7 @@ export function scanDeterministic(asset: { content: string; partnerTier: Partner
     ...scanSpokespersonAllowlist(content, guidelines),
     ...scanBadgeTier(content, partnerTier, guidelines),
     ...scanInlineSecrets(content),
+    ...scanPii(content),
   ];
   return dedupe(findings);
 }
@@ -598,5 +656,78 @@ export async function runGitleaksIfAvailable(targetPath: string): Promise<Findin
     if (dir) {
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
     }
+  }
+}
+
+/* ──────────── optional opt-in backstop: real Presidio NER sidecar ──────────── */
+
+interface PresidioEntity {
+  entity_type?: string;
+  start?: number;
+  end?: number;
+  score?: number;
+}
+
+/**
+ * Best-effort, OPT-IN PII scan via a Presidio Analyzer sidecar (MIT, Python —
+ * research/10-sota-integration-design.md §2.2 / §3: Python tools run as
+ * sidecars, never vendored into the strict-ESM TS tree, even MIT ones — same
+ * rule `docker/crawl4ai.md` documents for Crawl4AI). NOT called by
+ * `scanDeterministic` — callers invoke this explicitly when they want
+ * Presidio's higher-recall NER-based PII detection on top of the always-on
+ * inline regex pass above (`scanPii`).
+ *
+ * Resolves its sidecar URL from `opts.url`, then the `PRESIDIO_URL` env var;
+ * if neither is set there is nothing to call and this returns `[]`
+ * immediately — no network attempt at all, so the offline default never even
+ * tries. Also gracefully returns `[]` (never throws) on any sidecar error
+ * (unreachable, non-OK, timeout, malformed/non-array response), matching
+ * `runGitleaksIfAvailable`'s graceful-degradation discipline (the timeout
+ * additionally guards against a sidecar that accepts the connection but never
+ * responds — same discipline `nli-backstop.ts`'s `createHhemBackstop` uses).
+ * `opts.fetchImpl` is injectable so the "parses a canned response" shape is
+ * still covered by an offline unit test — see rules.test.ts.
+ */
+export async function presidioScan(
+  text: string,
+  opts?: { url?: string; fetchImpl?: typeof fetch; timeoutMs?: number },
+): Promise<FindingDraft[]> {
+  const base = (opts?.url ?? process.env["PRESIDIO_URL"])?.replace(/\/+$/, "");
+  if (!base) return []; // opt-in: no sidecar configured -- nothing to call
+  const fetchImpl = opts?.fetchImpl ?? globalThis.fetch;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 10_000);
+  try {
+    const res = await fetchImpl(`${base}/analyze`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, language: "en" }),
+      signal: controller.signal,
+    });
+    if (!res.ok) return [];
+    const hits: unknown = await res.json();
+    if (!Array.isArray(hits)) return [];
+
+    const findings: FindingDraft[] = [];
+    for (const h of hits as PresidioEntity[]) {
+      if (typeof h.start !== "number" || typeof h.end !== "number") continue;
+      if (h.start < 0 || h.end > text.length || h.start >= h.end) continue;
+      const quote = text.slice(h.start, h.end);
+      const label = h.entity_type ?? "PII";
+      findings.push(
+        draft({
+          category: "pii_leak",
+          quote: quote.length > 0 ? quote : label,
+          span: { start: h.start, end: h.end },
+          recommendedChange: `Presidio flagged a potential ${label} (score ${(h.score ?? 0).toFixed(2)}); remove or redact it before publishing.`,
+          severity: "high",
+        }),
+      );
+    }
+    return findings;
+  } catch {
+    return []; // sidecar unreachable / bad response / timeout -- opt-in, never fatal
+  } finally {
+    clearTimeout(timer);
   }
 }

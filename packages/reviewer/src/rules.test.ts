@@ -1,7 +1,13 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import type { Guideline, ReviewRequest, ClaimCategory } from "@mstack/core";
 
-import { scanDeterministic, runGitleaksIfAvailable, loadFullGuidelineCorpus, loadReviewRequests } from "./index.js";
+import {
+  scanDeterministic,
+  runGitleaksIfAvailable,
+  presidioScan,
+  loadFullGuidelineCorpus,
+  loadReviewRequests,
+} from "./index.js";
 
 describe("scanDeterministic — the mechanical pre-scan, run against the real sample corpus", () => {
   let guidelines: Guideline[];
@@ -150,5 +156,97 @@ describe("scanDeterministic — the mechanical pre-scan, run against the real sa
   it("runGitleaksIfAvailable never throws, whether or not the gitleaks binary is installed", async () => {
     const result = await runGitleaksIfAvailable(".");
     expect(Array.isArray(result)).toBe(true);
+  });
+
+  /* ── inline PII pass (Wave B2): synthetic input, independent of the asset fixtures ── */
+
+  it("flags a planted email address and SSN via the always-on inline PII pass (category pii_leak)", () => {
+    const findings = scanDeterministic(
+      {
+        content:
+          "Reach our partnerships lead at jane.doe@acmepartner.com with any questions; " +
+          "her SSN on file for the vendor form is 123-45-6789.",
+        partnerTier: "Elite",
+      },
+      guidelines,
+    );
+    const piiFindings = findings.filter((f) => f.category === "pii_leak");
+    expect(piiFindings.some((f) => f.quote === "jane.doe@acmepartner.com")).toBe(true);
+    expect(piiFindings.some((f) => f.quote === "123-45-6789")).toBe(true);
+    for (const f of piiFindings) {
+      expect(f.detectedBy).toBe("deterministic");
+      expect(f.required).toBe(true);
+      expect(f.supportingPassageId).toBeNull();
+    }
+  });
+
+  it("flags a planted phone number and credit card number via the same PII pass", () => {
+    const findings = scanDeterministic(
+      { content: "Call our team at 415-555-0199, or pay by card: 4111-1111-1111-1111.", partnerTier: "Elite" },
+      guidelines,
+    );
+    const piiFindings = findings.filter((f) => f.category === "pii_leak");
+    expect(piiFindings.some((f) => f.quote === "415-555-0199")).toBe(true);
+    expect(piiFindings.some((f) => f.quote === "4111-1111-1111-1111")).toBe(true);
+  });
+
+  it("does not flag ordinary prose (percentages, quarters, plain numbers) as PII", () => {
+    const findings = scanDeterministic(
+      { content: "Teams reported a 22% reduction in Q1 2026, across 40 deployments and 3.2 review cycles.", partnerTier: "Elite" },
+      guidelines,
+    );
+    expect(findings.some((f) => f.category === "pii_leak")).toBe(false);
+  });
+
+  it("the ABC Corp dirty asset (no PII planted) gets no pii_leak findings -- the PII scan adds nothing there, the original six categories are unaffected", () => {
+    const categories = categoriesFor("ABC Corp");
+    expect(categories.has("pii_leak")).toBe(false);
+    // the original six required categories from the top of this file are still all present
+    for (const c of [
+      "guaranteed_outcome",
+      "uncited_quantitative",
+      "unapproved_superlative",
+      "unapproved_spokesperson_quote",
+      "roadmap_disclosure",
+      "badge_tier_misuse",
+    ] as ClaimCategory[]) {
+      expect(categories.has(c)).toBe(true);
+    }
+  });
+
+  it("none of the four real asset fixtures (ABC Corp, Northland, Victorly, BrightPath) trigger a false-positive PII finding", () => {
+    for (const partnerId of ["ABC Corp", "Northland Analytics", "Victorly", "BrightPath"]) {
+      expect(categoriesFor(partnerId).has("pii_leak")).toBe(false);
+    }
+  });
+
+  /* ── the opt-in Presidio backstop (Wave B2): inert offline, parses when configured ── */
+
+  it("presidioScan resolves to [] with no url/PRESIDIO_URL configured -- no network attempt, opt-in stays inert offline", async () => {
+    const result = await presidioScan("contact jane@example.com for details");
+    expect(result).toEqual([]);
+  });
+
+  it("presidioScan parses a canned Presidio /analyze response into pii_leak findings", async () => {
+    const contentText = "contact jane@example.com for details";
+    const fetchImpl: typeof fetch = async () =>
+      new Response(JSON.stringify([{ entity_type: "EMAIL_ADDRESS", start: 8, end: 24, score: 0.95 }]), { status: 200 });
+
+    const result = await presidioScan(contentText, { url: "http://sidecar.local:5002", fetchImpl });
+
+    expect(result.length).toBe(1);
+    expect(result[0]?.category).toBe("pii_leak");
+    expect(result[0]?.quote).toBe("jane@example.com");
+    expect(result[0]?.detectedBy).toBe("deterministic");
+  });
+
+  it("presidioScan never throws on a non-OK or unreachable sidecar (opt-in, graceful degradation)", async () => {
+    const failing: typeof fetch = async () => new Response("err", { status: 500 });
+    await expect(presidioScan("x", { url: "http://sidecar.local:5002", fetchImpl: failing })).resolves.toEqual([]);
+
+    const unreachable: typeof fetch = async () => {
+      throw new Error("ECONNREFUSED");
+    };
+    await expect(presidioScan("x", { url: "http://sidecar.local:5002", fetchImpl: unreachable })).resolves.toEqual([]);
   });
 });

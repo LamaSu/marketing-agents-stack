@@ -22,8 +22,13 @@ Anthropic SDK call, prompt, or Zod-reask loop lives in this package.
   (real `bge-small-en-v1.5` via `@huggingface/transformers`, lazy-loaded, used
   by the `createLanceCorpus()` factory's default).
 - **`scanDeterministic`** (`rules.ts`) — the mechanical pre-scan: asset text +
-  partner tier + `Guideline[]` → candidate `FindingDraft[]` for the six
-  `ClaimCategory` values, every one `detectedBy: "deterministic"`.
+  partner tier + `Guideline[]` → candidate `FindingDraft[]` for the seven
+  `ClaimCategory` values (the original six, plus `pii_leak` added Wave B2),
+  every one `detectedBy: "deterministic"`.
+- **`NliBackstop`** (`nli-backstop.ts`, Wave B2) — the injectable grounded-NLI
+  seam `review-agent.ts`'s judge step calls for every finding it produces:
+  `noopNliBackstop` (default, offline, always agrees) and `createHhemBackstop`/
+  `hhemBackstop` (opt-in Vectara HHEM-2.1-Open sidecar — `docker/hhem.md`).
 - **`corpus-loader.ts`** — reads `data/corpus/guidelines.json` +
   `data/corpus/approved-messaging.md` (chunked by `##` section) into a
   combined `Guideline[]`, and `data/corpus/assets/assets.json` into
@@ -53,6 +58,7 @@ Verified against the real sample corpus (`data/corpus/`) in `rules.test.ts`:
 | `roadmap_disclosure` | data-driven: quoted denylist terms (codenames, product names) **+** a structural forward-looking-date pattern (`Q# 20XX` near a trigger word like "will be launching") | high for literal codenames; the date pattern is deliberately conservative (favors precision — see `rules.ts` §5) since the literal-term path already covers recall on the fixture |
 | `badge_tier_misuse` | a small structural table encoding the corpus's `tier_map` guideline rows (badge string → required `PartnerTier`) | high, but only for badges known to the table — see the table's comment for how to extend it |
 | `uncited_quantitative` | **bonus, best-effort**: a numeric-shape regex (`%`, `Nx`, `$amount`) plus a citation-marker window search (~250 chars either side) | **lowest confidence of the six** — a citation-window heuristic can both over- and under-suppress; this is the category the Wave-3 Claude judge should double-check or override most readily |
+| `pii_leak` (Wave B2) | **always-on inline regex** (`scanPii`): email addresses, SSNs, phone numbers, credit-card numbers — precision-favoring delimited shapes, not bare digit runs. Opt-in `presidioScan` sidecar trades precision for Presidio's NER-based recall (never called by `scanDeterministic` by default). | high precision, deliberately conservative recall for the offline default — same trade-off as the inline secret pass below |
 
 Everything this layer emits is a **prior**, not a verdict — `research/06-architecture.md`
 §3.1 step 5 explicitly has the Claude judge merge deterministic findings in
@@ -67,6 +73,27 @@ API-key assignments, Slack tokens, private-key blocks) — mapped onto
 call). The real `gitleaks` CLI is wired as an explicit, OPT-IN backstop
 (`runGitleaksIfAvailable`), never called by default — it gracefully returns
 `[]` if the binary isn't installed.
+
+**Wave B2** (`research/10-sota-integration-design.md` §2.2) added two pieces,
+both offline-safe by default:
+
+1. **`pii_leak` category + `scanPii`** — unlike the secret pass above, PII gets
+   its own dedicated `ClaimCategory` value (additive to core's enum). The
+   always-on inline regex pass is the offline default; `presidioScan(text,
+   {url})` is an explicit, OPT-IN Presidio (MIT, Python) sidecar for higher
+   recall — same graceful-degradation discipline as `runGitleaksIfAvailable`
+   (resolves its URL from an argument or `PRESIDIO_URL`; with neither set it
+   returns `[]` with zero network attempts).
+2. **Grounded-NLI backstop** (`nli-backstop.ts`) — a second, model-independent
+   opinion the judge step (`review-agent.ts`) calls on every finding it
+   produces. Default `noopNliBackstop` always agrees with the judge (fully
+   offline, no sidecar); `createHhemBackstop`/`hhemBackstop` is the opt-in
+   Vectara HHEM-2.1-Open sidecar (`docker/hhem.md` has the run command). On
+   disagreement, `reviewAsset`'s output re-attributes the finding
+   `detectedBy: "nli"` and adds `needsReview: true` — an additive,
+   optional field (`ReviewResultWithNli`/`NliFindingDraft` in
+   `review-agent.ts`), never a change to core's `ReviewResult`/`FindingDraft`
+   shape, so guardrail #1 (no generated-prose field) is untouched.
 
 ## Tests are fully offline
 

@@ -4,7 +4,10 @@
  * Reads the offline sample corpus (see data/README.md for the fixture
  * shapes) into the typed values this package and Wave-3's agent pipeline
  * consume:
- *   - `data/corpus/guidelines.json`       -> Guideline[] (20 curated rule rows)
+ *   - `data/corpus/guidelines.json`       -> Guideline[] (21 curated rule rows —
+ *                                            20 original + 1 `pii_leak` denylist
+ *                                            row added Wave B2, see rules.ts's
+ *                                            `scanPii`)
  *   - `data/corpus/approved-messaging.md` -> Guideline[] (chunked prose
  *                                            passages, `type:
  *                                            "approved_messaging"`, one row
