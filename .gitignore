@@ -40,3 +40,6 @@ videos/**/*.render.log
 # OS
 .DS_Store
 Thumbs.db
+
+# SOTA competitive analysis — LOCAL ONLY, never pushed (user directive 2026-07-21)
+research/sota/
