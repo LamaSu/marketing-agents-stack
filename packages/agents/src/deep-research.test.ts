@@ -23,7 +23,7 @@ describe("deepResearchTool", () => {
     const result = (await tool.handler({ query: "ACME cloud strategy?" })) as DeepResearchResult;
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = (fetchImpl as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0]!;
+    const [url, init] = (fetchImpl as unknown as { mock: { calls: [string, { body?: string }][] } }).mock.calls[0]!;
     expect(url).toBe("http://sidecar.local:8001/report/"); // trailing slash stripped from base, endpoint added
     expect(JSON.parse(String(init.body))).toEqual({
       task: "ACME cloud strategy?",

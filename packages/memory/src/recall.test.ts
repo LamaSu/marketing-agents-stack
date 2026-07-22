@@ -29,10 +29,10 @@ describe("createGraphitiRecall (opt-in sidecar)", () => {
     const hits = await provider.recall("acc_1", "recent history");
 
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = (fetchImpl as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0]!;
+    const [url, init] = (fetchImpl as unknown as { mock: { calls: [string, { body?: string }][] } }).mock.calls[0]!;
     expect(url).toBe("http://sidecar.local:8002/search");
     expect(JSON.parse(String(init.body))).toEqual({ accountId: "acc_1", query: "recent history" });
-    expect(hits).toEqual<RecallHit[]>([
+    expect(hits).toEqual([
       { id: "h1", text: "Bought the enterprise plan in Q2", score: 0.9, source: "crm", ts: "2026-04-01" },
       { id: "h2", text: "Champion left the company", score: 0.7 },
     ]);
