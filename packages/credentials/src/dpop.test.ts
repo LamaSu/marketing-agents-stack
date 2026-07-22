@@ -64,11 +64,28 @@ describe("DPoP proof uniqueness + determinism", () => {
     expect(decodePayload(a).jti).not.toBe(decodePayload(b).jti);
   });
 
-  it("is deterministic when key + clock + jti are all fixed", () => {
+  it("produces deterministic CLAIMS for fixed key+clock+jti (ES256 signature still varies)", () => {
     const kp = generateDpopKeyPair("ES256");
     const opts = { clock: fixedClock, jti: () => "fixed" };
     const a = createDpopSigner(kp, opts).proof({ htm: "GET", htu: "https://h/x" });
     const b = createDpopSigner(kp, opts).proof({ htm: "GET", htu: "https://h/x" });
+    // The signed content (header + payload) is byte-identical — no hidden randomness
+    // in what we sign for fixed inputs.
+    expect(a.split(".").slice(0, 2).join(".")).toBe(b.split(".").slice(0, 2).join("."));
+    // ...but ECDSA (ES256) draws a fresh random nonce per signature (it is NOT
+    // deterministic without RFC 6979), so the full proofs differ — and each still
+    // verifies. DPoP proofs are single-use anyway, so this is correct, not a defect.
+    expect(a).not.toBe(b);
+    expect(verifyDpopProof(a, { htm: "GET", htu: "https://h/x", now: FIXED_MS }).valid).toBe(true);
+    expect(verifyDpopProof(b, { htm: "GET", htu: "https://h/x", now: FIXED_MS }).valid).toBe(true);
+  });
+
+  it("EdDSA proofs ARE fully deterministic for fixed key+clock+jti (RFC 8032 deterministic nonce)", () => {
+    const kp = generateDpopKeyPair("EdDSA");
+    const opts = { clock: fixedClock, jti: () => "fixed" };
+    const a = createDpopSigner(kp, opts).proof({ htm: "GET", htu: "https://h/x" });
+    const b = createDpopSigner(kp, opts).proof({ htm: "GET", htu: "https://h/x" });
+    // Ed25519 signatures are deterministic, so the whole JWT is byte-for-byte equal.
     expect(a).toBe(b);
   });
 });
