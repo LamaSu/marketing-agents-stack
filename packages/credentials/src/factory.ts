@@ -23,6 +23,15 @@ export interface OpenBrokerOptions {
   dpopSigner?: DpopSigner;
 }
 
+// NOTE (Infisical Agent Vault, verified 2026-07-22): SOTA-08 asked whether to align to
+// Infisical's Agent Vault (an OSS HTTP credential proxy for agents -- this seam, productized).
+// Verified live: Agent Vault is EE-gated (paid) -- its proxy machinery (`agent-proxy-ca`,
+// `gateway*`) lives under `backend/src/ee/services`, and Infisical's README scopes the MIT
+// license to everything EXCEPT `ee/` ("premium enterprise features requiring a Infisical
+// license"). So there is intentionally NO `InfisicalBroker` branch here: it could not be a
+// free/self-hostable default. If Infisical later moves the agent proxy into the MIT core, an
+// `InfisicalBroker implements CredentialBroker` drops in exactly like GatecraftBroker below.
+// The hardening we DID ship is DPoP request-binding (dpop.ts), which we own outright.
 export function openBroker(options: OpenBrokerOptions = {}): CredentialBroker {
   if (options.gcInvoke) {
     return new GatecraftBroker(options.gcInvoke, {
