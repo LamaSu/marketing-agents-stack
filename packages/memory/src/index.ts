@@ -4,3 +4,5 @@
 export * from "./memory-repo.js";
 /** halo-record-format external audit export (research/10-sota-integration-design.md §2.11) — an exporter only, the internal chain above is untouched. */
 export * from "./halo-export.js";
+/** Optional semantic/temporal recall seam (research/10-sota-integration-design.md §2.8) — a DERIVED, opt-in Graphiti index; no-op default, warehouse stays authoritative. */
+export * from "./recall.js";
