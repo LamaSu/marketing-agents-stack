@@ -73,6 +73,44 @@ this has not been run end-to-end. skl2onnx is expected to have a `CalibratedClas
 converter in recent releases, but that has not been exercised against the pinned
 `skl2onnx>=1.16`; verify together the first time you actually run this against real data.
 
+## GP+BALD qualifier hyperparameters (`qualifier.py`, optional)
+
+`qualifier.py` is a **separate, optional** sidecar for the active-learning qualifier in
+`../src/qualifier.ts` -- unrelated to the ONNX classifier above. The TypeScript exact-GP
+is the **primary** inference path and runs offline with sensible default hyperparameters
+and **no Python**. Run `qualifier.py` only at **scale**, once you have enough labeled
+approvals that kernel hyperparameters tuned by maximizing the marginal likelihood beat the
+TS defaults.
+
+It fits a `GaussianProcessRegressor` (ConstantKernel·RBF + WhiteKernel) over the same
+`featurize()` feature columns (standardized, targets centered by the label mean -- matching
+the TS side exactly) and exports the optimized hyperparameters as a small JSON:
+
+```bash
+python qualifier.py --input accounts.csv --output qualifier-hparams.json
+python qualifier.py --input accounts.csv --output qualifier-hparams.json --restarts 10
+```
+
+The JSON fields (`lengthScale`, `signalVariance`, `noiseVariance`, `priorMean`) map
+one-to-one onto `GaussianProcessQualifierConfig`. A caller just does:
+
+```ts
+import hp from "./qualifier-hparams.json" with { type: "json" };
+const qualifier = new GaussianProcessQualifier(hp); // then qualifier.fit(labeledApprovals)
+```
+
+So Python tunes the kernel; **TS stays the inference authority** (it already holds the
+approval labels at runtime). Unlike `train.py`/`calibrate.py`, this emits **hyperparameter
+JSON, not ONNX** -- an exact GP posterior is cheap to recompute in TS from
+(labels + hyperparameters), and re-fitting after every new approval is the intended usage.
+
+**The label loop:** the qualifier's `selectForReview()` (BALD) picks the highest-uncertainty
+accounts into the human approval queue; each approve/reject becomes a label
+(`approvalToLabel`: approve→1, reject→0, edit→skip). Pull persisted `Approval`s from
+`@mstack/memory`, join each to its account + signals, and pass them to `fit()` -- the
+HITL gate and the active learner are one offline loop. `qualifier.py` is **unverified**,
+same caveat as `train.py` (no labeled dataset ships with this repo).
+
 ## The TS/ONNX contract (read before changing either side)
 
 - Input tensor name: `"input"`, dtype `float32`, shape `[1, 5]` (one row at a time).
