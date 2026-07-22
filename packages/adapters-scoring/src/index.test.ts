@@ -1,7 +1,17 @@
 import { describe, it, expect } from "vitest";
 import type Anthropic from "@anthropic-ai/sdk";
 import { Account, Signal } from "@mstack/core";
-import { RulesScorer, ClaudeScorer, OnnxScorer, HybridScorer, scoringProvider, tierForScore, featurize } from "./index.js";
+import {
+  RulesScorer,
+  ClaudeScorer,
+  OnnxScorer,
+  HybridScorer,
+  scoringProvider,
+  tierForScore,
+  featurize,
+  decayWeight,
+  signalAgeDays,
+} from "./index.js";
 
 const FIXED_NOW = "2026-07-20T00:00:00.000Z";
 const fixedClock = () => new Date(FIXED_NOW).getTime();
@@ -71,6 +81,77 @@ describe("RulesScorer", () => {
   });
 });
 
+describe("RulesScorer -- fit x intent split + time-decay", () => {
+  it("returns fit and intent alongside score; score is the blended headline of both", async () => {
+    const scorer = new RulesScorer({ now: fixedClock });
+    const result = await scorer.score(account(), [
+      signal({ id: "s1", action: "requested_demo" }),
+      signal({ id: "s2", kind: "intent", action: "pricing_page_view" }),
+    ]);
+
+    expect(typeof result.fit).toBe("number");
+    expect(typeof result.intent).toBe("number");
+    expect(result.fit).toBeGreaterThan(0);
+    expect(result.intent).toBeGreaterThan(0);
+    expect(result.score).toBe(Math.min(100, Math.round((result.fit ?? 0) + (result.intent ?? 0))));
+  });
+
+  it("fit is firmographic-only and intent is signal-only -- each is 0 when its half of the input is absent", async () => {
+    const scorer = new RulesScorer({ now: fixedClock });
+
+    const fitOnly = await scorer.score(account(), []); // rich firmographic, zero signals
+    expect(fitOnly.fit).toBeGreaterThan(0);
+    expect(fitOnly.intent).toBe(0);
+
+    const intentOnly = await scorer.score(
+      account({ firmographic: { employees: null, industry: null, region: null, tech: [] } }),
+      [signal({ action: "requested_demo" })],
+    );
+    expect(intentOnly.fit).toBe(0);
+    expect(intentOnly.intent).toBeGreaterThan(0);
+  });
+
+  it("decayWeight is 1.0 at age 0, halves at the half-life, and never crashes on non-finite input", () => {
+    expect(decayWeight(0, 90)).toBe(1);
+    expect(decayWeight(90, 90)).toBeCloseTo(0.5, 10);
+    expect(decayWeight(180, 90)).toBeCloseTo(0.25, 10);
+    expect(decayWeight(Number.POSITIVE_INFINITY, 90)).toBe(0);
+  });
+
+  it("signalAgeDays computes age in days from a Signal's ts, clamped at 0 (never negative)", () => {
+    const now = new Date(FIXED_NOW).getTime();
+    expect(signalAgeDays(signal({ ts: FIXED_NOW }), now)).toBe(0);
+    expect(signalAgeDays(signal({ ts: new Date(now - 10 * 86_400_000).toISOString() }), now)).toBeCloseTo(10, 6);
+    expect(signalAgeDays(signal({ ts: new Date(now + 5 * 86_400_000).toISOString() }), now)).toBe(0); // future ts -> clamped, never negative
+  });
+
+  it("a stale signal contributes markedly less intent than an identical fresh one (fixed clock, deterministic)", async () => {
+    const scorer = new RulesScorer({ now: fixedClock, signalHalfLifeDays: 90 });
+    const staleTs = new Date(new Date(FIXED_NOW).getTime() - 180 * 86_400_000).toISOString(); // 2 half-lives old
+
+    const fresh = await scorer.score(account(), [signal({ id: "s1", ts: FIXED_NOW, action: "requested_demo" })]);
+    const stale = await scorer.score(account(), [signal({ id: "s1", ts: staleTs, action: "requested_demo" })]);
+
+    expect(fresh.intent).toBeGreaterThan(0);
+    expect(stale.intent).toBeGreaterThan(0); // decayed, not zeroed out entirely
+    expect(stale.intent as number).toBeLessThan((fresh.intent as number) * 0.5);
+  });
+
+  it("a disqualifying signal still floors to DISQUALIFIED (score 0, no fit/intent) even mixed with strong fit + fresh high-intent signals", async () => {
+    const scorer = new RulesScorer({ now: fixedClock });
+    const result = await scorer.score(account(), [
+      signal({ id: "s1", action: "requested_demo" }),
+      signal({ id: "s2", kind: "intent", action: "pricing_page_view" }),
+      signal({ id: "s3", action: "unsubscribed" }), // disqualifying, mixed in with strong signals
+    ]);
+
+    expect(result.tier).toBe("DISQUALIFIED");
+    expect(result.score).toBe(0);
+    expect(result.fit).toBeUndefined(); // hard-disqualifier path short-circuits before computing sub-scores
+    expect(result.intent).toBeUndefined();
+  });
+});
+
 describe("HybridScorer", () => {
   it("with no Claude client and no ONNX model, returns rules-only and cites it in the rationale", async () => {
     const scorer = new HybridScorer(); // zero config -- must stay fully offline
@@ -118,6 +199,33 @@ describe("HybridScorer", () => {
 
     expect(result.rationale).toContain("rules");
     expect(result.rationale).not.toContain("claude");
+  });
+});
+
+describe("HybridScorer -- fit/intent passthrough + disqualifier floor unchanged (edge #4)", () => {
+  it("a Rules hard-disqualifier still floors the blend even with an injected high-scoring ClaudeScorer", async () => {
+    const fakeClient = {
+      messages: {
+        create: async () => ({
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: JSON.stringify({ score: 95, tier: "STRONG_FIT", rationale: "looks great" }) }],
+        }),
+      },
+    } as unknown as Anthropic;
+    const scorer = new HybridScorer({ claude: new ClaudeScorer({ client: fakeClient }) });
+
+    const result = await scorer.score(account(), [signal({ action: "do_not_contact" })]);
+
+    expect(result.tier).toBe("DISQUALIFIED");
+    expect(result.score).toBe(0); // an optimistic 95 from Claude must never rescue a disqualified account
+  });
+
+  it("propagates RulesScorer's fit/intent through the non-disqualified default (offline, zero config) blend", async () => {
+    const scorer = new HybridScorer();
+    const result = await scorer.score(account(), [signal({ action: "requested_demo" })]);
+
+    expect(typeof result.fit).toBe("number");
+    expect(typeof result.intent).toBe("number");
   });
 });
 

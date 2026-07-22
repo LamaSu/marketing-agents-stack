@@ -35,6 +35,21 @@ export interface EnrichmentRecord {
 export interface ScoreResult {
   score: number; // 0-100
   tier: AccountTier;
+  /**
+   * ICP-fit sub-score (firmographic/technographic only), 0-100 -- OPTIONAL and ADDITIVE.
+   * Populated by scorers that compute a fit x intent split (`RulesScorer`, and
+   * `HybridScorer`'s per-axis blend of whichever sub-scorers supply it); a scorer that
+   * only produces one headline `score` simply omits it. Consumers that read only
+   * `score`/`tier`/`rationale` are completely unaffected by this field's presence or
+   * absence. See research/10-sota-integration-design.md §2.6 (MadKudu-shaped 2-model
+   * split, composed here as one scorer's two sub-totals).
+   */
+  fit?: number;
+  /**
+   * Behavioral/intent sub-score (signal-derived, time-decayed by age), 0-100 -- same
+   * optionality and provenance as `fit`. See above.
+   */
+  intent?: number;
   /** agent-actionable reason a bare number can't give (LLM/hybrid scorers fill this). */
   rationale?: string;
 }

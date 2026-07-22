@@ -45,6 +45,34 @@ accuracy/AUC, and offers a `--model gradient_boosting` flag to escalate to
 `GradientBoostingClassifier` once the dataset is rich enough. It writes `model.onnx` to
 this directory (`OnnxScorer`'s default `modelPath`).
 
+## Calibration (`calibrate.py`)
+
+`train.py`'s raw `predict_proba` is not a calibrated probability -- a score of 0.8 does
+not necessarily mean "80% of accounts like this one convert." `calibrate.py` fixes that
+with `sklearn.calibration.CalibratedClassifierCV`, wrapping the same base estimator
+choices (`--base logistic_regression|gradient_boosting`) and picking a calibration
+method automatically by dataset size -- Platt/`sigmoid` below 1000 training rows
+(2-parameter fit, works with little data), `isotonic` at/above it (more expressive,
+needs more data to avoid overfitting). Override with `--method`.
+
+```bash
+python calibrate.py --input accounts.csv --output model.onnx
+python calibrate.py --input accounts.csv --output model.onnx --method isotonic
+python calibrate.py --input accounts.csv --output model.onnx --base gradient_boosting --cv 10
+```
+
+Same `accounts.csv` shape as `train.py` (see the columns table above) -- `calibrate.py`
+imports `train.py`'s own `load_dataset`/`export_onnx` directly rather than duplicating
+them, so both scripts are provably on the identical CSV contract and the identical
+ONNX/TS contract described below. It reports the held-out Brier score (and AUC, when
+both classes are present) so you can see the calibration quality before shipping
+`model.onnx`.
+
+**Unverified**, same caveat as `train.py` -- no labeled dataset ships with this repo, so
+this has not been run end-to-end. skl2onnx is expected to have a `CalibratedClassifierCV`
+converter in recent releases, but that has not been exercised against the pinned
+`skl2onnx>=1.16`; verify together the first time you actually run this against real data.
+
 ## The TS/ONNX contract (read before changing either side)
 
 - Input tensor name: `"input"`, dtype `float32`, shape `[1, 5]` (one row at a time).

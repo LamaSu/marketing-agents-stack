@@ -21,8 +21,18 @@
  * `score()` returns that result immediately and the Claude/Onnx blend is skipped entirely
  * -- an optimistic LLM/ML score can never rescue a disqualified account. The `max(rules,
  * weighted(ml,llm))` blend only applies to accounts that clear the rules gate.
+ *
+ * FIT x INTENT PER-AXIS BLEND (research/10-sota-integration-design.md §2.6, edge #4):
+ * additive on top of the above -- the headline `score`/`tier` computation is byte-for-
+ * byte UNCHANGED. When a contributor's `ScoreResult` also carries `fit`/`intent` (today
+ * only `RulesScorer` does; `ClaudeScorer`/`OnnxScorer` don't populate them yet), those
+ * axes are blended the same way as the headline score -- `max(rulesAxis,
+ * weighted(contributors that supply that axis))` -- via `blendAxis()` below. With zero
+ * other contributors supplying an axis (the common case today), this simply passes
+ * Rules' `fit`/`intent` straight through unchanged. This is written generically so it
+ * blends correctly, for free, the day Claude/Onnx grow their own fit/intent split too.
  */
-import { tierForScore } from "./tiers.js";
+import { tierForScore, clampScore } from "./tiers.js";
 import { RulesScorer } from "./rules-scorer.js";
 import { ClaudeScorer } from "./claude-scorer.js";
 import { OnnxScorer } from "./onnx-scorer.js";
@@ -52,6 +62,34 @@ export interface HybridScorerOptions {
 
 const DEFAULT_WEIGHTS: Required<HybridScorerWeights> = { onnx: 1.6, claude: 1 };
 
+interface AxisContributor {
+  fit?: number;
+  intent?: number;
+  weight: number;
+}
+
+/**
+ * Per-axis (`fit`/`intent`) analogue of the headline score blend: `max(rulesAxisValue,
+ * weighted(contributors that supply this axis))`. Purely additive -- with zero
+ * contributors supplying the axis (true today for Claude/Onnx, which don't populate
+ * fit/intent yet) it simply returns `rulesAxisValue` unchanged. Returns `undefined` iff
+ * Rules itself didn't compute the axis -- the true hard-disqualifier short-circuit in
+ * `RulesScorer`, where there is nothing to report on either axis.
+ */
+function blendAxis(rulesAxisValue: number | undefined, contributors: AxisContributor[], axis: "fit" | "intent"): number | undefined {
+  if (rulesAxisValue === undefined) return undefined;
+
+  const supplied = contributors
+    .map((c) => ({ value: axis === "fit" ? c.fit : c.intent, weight: c.weight }))
+    .filter((c): c is { value: number; weight: number } => c.value !== undefined);
+
+  if (supplied.length === 0) return rulesAxisValue;
+
+  const weightSum = supplied.reduce((sum, c) => sum + c.weight, 0);
+  const weightedAvg = supplied.reduce((sum, c) => sum + c.value * c.weight, 0) / weightSum;
+  return clampScore(Math.max(rulesAxisValue, weightedAvg));
+}
+
 export class HybridScorer implements ScoringProvider {
   readonly name = "hybrid";
   readonly #rules: RulesScorer;
@@ -74,15 +112,32 @@ export class HybridScorer implements ScoringProvider {
     // Rules own the compliance gate; the blend only applies to non-disqualified accounts.
     if (rulesResult.tier === "DISQUALIFIED") {
       const detail = rulesResult.rationale ? ` | ${rulesResult.rationale}` : "";
-      return { score: rulesResult.score, tier: "DISQUALIFIED", rationale: `hybrid(rules) | disqualified by rules (hard floor)${detail}` };
+      return {
+        score: rulesResult.score,
+        tier: "DISQUALIFIED",
+        // Passthrough only -- RulesScorer's hard-disqualifier path doesn't compute these
+        // (nothing to report), so they're `undefined` here too, exactly as before this
+        // field existed. The "sparse account -> low score -> DISQUALIFIED via tier
+        // threshold" path (not a hard disqualifier) DOES compute them, so they flow
+        // through as real numbers in that case.
+        fit: rulesResult.fit,
+        intent: rulesResult.intent,
+        rationale: `hybrid(rules) | disqualified by rules (hard floor)${detail}`,
+      };
     }
 
-    const contributors: Array<{ source: "claude" | "onnx"; score: number; weight: number }> = [];
+    const contributors: Array<{ source: "claude" | "onnx"; score: number; fit?: number; intent?: number; weight: number }> = [];
 
     if (this.#claude) {
       try {
         const claudeResult = await this.#claude.score(account, signals);
-        contributors.push({ source: "claude", score: claudeResult.score, weight: this.#weights.claude });
+        contributors.push({
+          source: "claude",
+          score: claudeResult.score,
+          fit: claudeResult.fit,
+          intent: claudeResult.intent,
+          weight: this.#weights.claude,
+        });
       } catch {
         // Refusal / network / auth failure -- drop Claude from this call's blend, don't fail the score.
       }
@@ -90,16 +145,27 @@ export class HybridScorer implements ScoringProvider {
 
     try {
       const onnxResult = await this.#onnx.score(account, signals);
-      contributors.push({ source: "onnx", score: onnxResult.score, weight: this.#weights.onnx });
+      contributors.push({
+        source: "onnx",
+        score: onnxResult.score,
+        fit: onnxResult.fit,
+        intent: onnxResult.intent,
+        weight: this.#weights.onnx,
+      });
     } catch {
       // No trained model yet -- the expected default state (Wave-5 sidecar is opt-in).
     }
 
+    // --- headline score: EXACTLY the pre-existing max(rules, weighted(onnx,claude)) blend ---
     const weightSum = contributors.reduce((sum, c) => sum + c.weight, 0);
     const mlLlmScore = weightSum > 0 ? contributors.reduce((sum, c) => sum + c.score * c.weight, 0) / weightSum : undefined;
 
     const finalScore = mlLlmScore === undefined ? rulesResult.score : Math.round(Math.max(rulesResult.score, mlLlmScore));
     const tier = tierForScore(finalScore);
+
+    // --- per-axis blend: purely additive, see the file header. ---
+    const fit = blendAxis(rulesResult.fit, contributors, "fit");
+    const intent = blendAxis(rulesResult.intent, contributors, "intent");
 
     const parts = [
       `hybrid(${["rules", ...contributors.map((c) => c.source)].join("+")})`,
@@ -108,6 +174,6 @@ export class HybridScorer implements ScoringProvider {
     ];
     if (rulesResult.rationale) parts.push(`rules detail: ${rulesResult.rationale}`);
 
-    return { score: finalScore, tier, rationale: parts.join(" | ") };
+    return { score: finalScore, tier, fit, intent, rationale: parts.join(" | ") };
   }
 }

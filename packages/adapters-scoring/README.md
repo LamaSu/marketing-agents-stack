@@ -8,7 +8,10 @@ swarm (research/06-architecture.md §3.2). No OSS MadKudu/Pocus exists to adopt
 - **`RulesScorer`** -- the always-on, zero-dependency, fully offline floor. Weighted
   firmographic + signal rules -> 0-100, with hard disqualifiers (e.g. an `unsubscribed`
   signal) that force `DISQUALIFIED` regardless of everything else. `rationale` lists
-  every rule that fired.
+  every rule that fired. Also reports the blend's two components on `ScoreResult` --
+  `fit` (firmographic/technographic only) and `intent` (behavioral signals, exponentially
+  time-decayed by age -- ~90-day half-life, see `decayWeight()` in `rules-scorer.ts`) --
+  both optional and additive, so callers that only read `score` are unaffected.
 - **`ClaudeScorer`** -- cold-start scoring with zero training data, via
   `@anthropic-ai/sdk`. The `Anthropic` client is **injectable** (`new ClaudeScorer({
   client })`); when omitted, one is constructed lazily on first use (never at import or
@@ -32,7 +35,7 @@ import { scoringProvider, ClaudeScorer } from "@mstack/adapters-scoring";
 
 // Offline, zero-config -- Rules-only.
 const scorer = scoringProvider(); // HybridScorer, degrades to rules
-const result = await scorer.score(account, signals); // { score, tier, rationale }
+const result = await scorer.score(account, signals); // { score, tier, rationale, fit?, intent? }
 
 // Opt into Claude cold-start scoring by injecting a client.
 import Anthropic from "@anthropic-ai/sdk";
@@ -54,6 +57,12 @@ const withClaude = scoringProvider("hybrid", { claude: new ClaudeScorer({ client
   `train/README.md`), not a fact verified against a real trained model -- no labeled
   dataset ships with this repo, so the ONNX path has not been exercised end-to-end.
   Verify both sides together the first time a real model is trained and loaded.
+- `train/calibrate.py` (probability calibration via `CalibratedClassifierCV`) reuses
+  `train.py`'s exact CSV and ONNX-export contract, so a calibrated model loads into
+  `OnnxScorer` unchanged -- but, like `train/train.py`, it has not been run end-to-end
+  against a real dataset, and skl2onnx's `CalibratedClassifierCV` converter support has
+  not been verified against the pinned `skl2onnx` version. Verify together the first
+  time you actually run it (see `train/README.md`).
 - Written without running `pnpm install`/`pnpm test` locally (dev tablet OOMs on native
   deps -- `docs/build-conventions.md`). `@anthropic-ai/sdk`'s `messages.parse` +
   `zodOutputFormat` usage matches the Claude API skill's documented TypeScript examples
