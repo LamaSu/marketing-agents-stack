@@ -133,7 +133,7 @@ export class PostHogSource implements SignalSource {
    * Fetch a single page from PostHog, with rate-limit retry logic.
    * Returns the parsed response or throws on non-429 errors.
    */
-  private async #fetchWithRetry(url: string, headers: Record<string, string>): Promise<PostHogEventsResponse> {
+  async #fetchWithRetry(url: string, headers: Record<string, string>): Promise<PostHogEventsResponse> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt <= this.#maxRateLimitRetries; attempt++) {

@@ -188,7 +188,18 @@ function summarizeApproval(approval: Approval): string {
   return `${approval.actor} ${approval.decision}d ${target}${noteSuffix}`;
 }
 
-function toHaloRecord(approval: Approval, seq: number): HaloRecord {
+/**
+ * Map one `Approval` to a halo record. `prevHaloHash` is the PREVIOUS halo
+ * record's own `integrity.hash` (or `GENESIS_HASH` for the first) — i.e. the
+ * halo chain is self-consistent under HALO's own canonicalization, per the
+ * documented algorithm ("`integrity.prev_hash` set to the previous record's
+ * hash"). It is deliberately NOT `approval.prevHash`: that is our INTERNAL
+ * chain's link, computed with `memory-repo`'s `canonicalJson` — a different
+ * algorithm — so mixing it in would make the exported chain fail an external
+ * `halo verify`. The internal `prevHash`/`hash` are not lost: they travel
+ * verbatim inside `mstack.approval`.
+ */
+function toHaloRecord(approval: Approval, seq: number, prevHaloHash: string): HaloRecord {
   const authorization: HaloAction["authorization"] =
     approval.decision === "reject" ? "denied" : "human_approved";
 
@@ -206,7 +217,7 @@ function toHaloRecord(approval: Approval, seq: number): HaloRecord {
     integrity: {
       alg: "sha-256",
       canon: "rfc8785",
-      prev_hash: approval.prevHash,
+      prev_hash: prevHaloHash,
     },
     mstack: { seq, approval },
   };
@@ -232,9 +243,12 @@ export async function exportAuditHalo(memory: MemoryRepo): Promise<HaloRecord[]>
   );
 
   const records: HaloRecord[] = [];
+  let prevHaloHash = GENESIS_HASH;
   for (const row of rows) {
     const approval = Approval.parse(JSON.parse(String(row.data)));
-    records.push(toHaloRecord(approval, Number(row.seq)));
+    const record = toHaloRecord(approval, Number(row.seq), prevHaloHash);
+    records.push(record);
+    prevHaloHash = record.integrity.hash; // thread HALO's own chain, not the internal one
   }
   return records;
 }

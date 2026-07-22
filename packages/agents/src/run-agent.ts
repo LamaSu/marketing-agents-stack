@@ -35,11 +35,18 @@ import type { AgentTool, AnthropicClient, RunAgentConfig } from "./types.js";
 const DEFAULT_MAX_TOKENS = 8192;
 const DEFAULT_MAX_TOOL_ITERATIONS = 8;
 
-/** One tracer for the whole package, resolved once at module load. Resolves to
- *  the OTel no-op tracer until a deployer registers a real TracerProvider —
- *  every span created through it is then a free no-op, which is what keeps
- *  the keyless demo collector-free. */
-const tracer = trace.getTracer("@mstack/agents");
+/** The package tracer, resolved LAZILY per call (not cached at module load).
+ *  Resolves to the OTel no-op tracer until a deployer registers a real
+ *  TracerProvider — every span created through it is then a free no-op, which
+ *  is what keeps the keyless demo collector-free. Acquiring it per-call (rather
+ *  than one module-level const) is deliberate: a module-load `getTracer()`
+ *  returns a ProxyTracer that caches its delegate on first resolution and never
+ *  re-resolves, so a provider registered (or re-registered) after import would
+ *  be ignored. Lazy acquisition makes "register a provider after import" — and
+ *  the test suite's disable/re-register cycle — actually work. */
+function tracer() {
+  return trace.getTracer("@mstack/agents");
+}
 
 /** Thrown when the agent output fails schema validation even after the re-ask. */
 export class AgentOutputError extends Error {
@@ -54,7 +61,7 @@ export class AgentOutputError extends Error {
 export async function runAgent<TIn, TOut>(
   cfg: RunAgentConfig<TIn, TOut>,
 ): Promise<TOut> {
-  return tracer.startActiveSpan("agents.runAgent", async (span) => {
+  return tracer().startActiveSpan("agents.runAgent", async (span) => {
     span.setAttribute("model", cfg.model);
     span.setAttribute("prompt_hash", promptHash(cfg));
     try {
@@ -216,7 +223,7 @@ async function createMessage(
   params: Anthropic.MessageCreateParamsNonStreaming,
   onDelta: ((delta: string) => void) | undefined,
 ): Promise<Anthropic.Message> {
-  return tracer.startActiveSpan("agents.runAgent.model_call", async (span) => {
+  return tracer().startActiveSpan("agents.runAgent.model_call", async (span) => {
     const startedAt = Date.now();
     span.setAttribute("model", params.model);
     span.setAttribute("streaming", Boolean(onDelta));
@@ -276,28 +283,34 @@ async function runToolSafely(
   tool: AgentTool | undefined,
   block: Anthropic.ToolUseBlock,
 ): Promise<Anthropic.ToolResultBlockParam> {
-  return tracer.startActiveSpan("agents.runAgent.tool_call", async (span) => {
-    span.setAttribute("tool_name", block.name);
-    try {
-      if (!tool) {
-        span.setStatus({ code: SpanStatusCode.ERROR, message: "unknown tool" });
-        return errorResult(block.id, `Unknown tool: ${block.name}`);
+  return tracer().startActiveSpan(
+    "agents.runAgent.tool_call",
+    async (span): Promise<Anthropic.ToolResultBlockParam> => {
+      span.setAttribute("tool_name", block.name);
+      try {
+        if (!tool) {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: "unknown tool" });
+          return errorResult(block.id, `Unknown tool: ${block.name}`);
+        }
+        const result = await tool.handler(block.input);
+        span.setStatus({ code: SpanStatusCode.OK });
+        return {
+          type: "tool_result",
+          tool_use_id: block.id,
+          content: typeof result === "string" ? result : JSON.stringify(result),
+        };
+      } catch (err) {
+        span.recordException(err instanceof Error ? err : String(err));
+        span.setStatus({ code: SpanStatusCode.ERROR, message: errMsg(err) });
+        // `block.name` (not `tool.name`): TS does not flow the `if (!tool)`
+        // guard's narrowing into this catch, and block.name is the same tool
+        // name anyway (the tool the model invoked).
+        return errorResult(block.id, `Tool "${block.name}" failed: ${errMsg(err)}`);
+      } finally {
+        span.end();
       }
-      const result = await tool.handler(block.input);
-      span.setStatus({ code: SpanStatusCode.OK });
-      return {
-        type: "tool_result",
-        tool_use_id: block.id,
-        content: typeof result === "string" ? result : JSON.stringify(result),
-      };
-    } catch (err) {
-      span.recordException(err instanceof Error ? err : String(err));
-      span.setStatus({ code: SpanStatusCode.ERROR, message: errMsg(err) });
-      return errorResult(block.id, `Tool "${tool.name}" failed: ${errMsg(err)}`);
-    } finally {
-      span.end();
-    }
-  });
+    },
+  );
 }
 
 function errorResult(
