@@ -154,10 +154,16 @@ const FUNNEL_SQL = `
     (SELECT COUNT(*) FROM decisions) AS decisions_made,
     (SELECT COUNT(*) FROM drafts) AS drafts_created,
     (SELECT COUNT(*) FROM drafts WHERE status IN ('approved', 'dispatched')) AS drafts_approved,
-    (SELECT COUNT(DISTINCT ref_id) FROM outcomes WHERE ref_type = 'draft' AND result = 'sent') AS dispatched,
-    (SELECT COUNT(DISTINCT ref_id) FROM outcomes WHERE ref_type = 'draft' AND result = 'replied') AS replied,
-    (SELECT COUNT(DISTINCT ref_id) FROM outcomes WHERE ref_type = 'draft' AND result = 'meeting') AS meeting
+    (SELECT COUNT(DISTINCT ref_id) FROM outcomes WHERE ref_type = 'draft' AND data LIKE '%"result":"sent"%') AS dispatched,
+    (SELECT COUNT(DISTINCT ref_id) FROM outcomes WHERE ref_type = 'draft' AND data LIKE '%"result":"replied"%') AS replied,
+    (SELECT COUNT(DISTINCT ref_id) FROM outcomes WHERE ref_type = 'draft' AND data LIKE '%"result":"meeting"%') AS meeting
 `;
+// NOTE: the `outcomes` table stores the Outcome as a JSON `data` blob (columns are
+// id/ref_id/ref_type/ts/data — see memory-repo.ts); `result` is NOT a real column.
+// This package avoids DuckDB's JSON extension (matching memory-repo's convention of
+// parsing JSON in JS, never SQL-side), so we match the canonical serialized form:
+// `Outcome.parse` → `JSON.stringify` always emits `"result":"<enum>"` verbatim, and
+// `result` is a fixed enum, so this LIKE is exact for our data.
 
 /** The GTM funnel (8 stages, stage-to-stage conversion rates) — see the file header for the exact
  *  stage list and the "conversion > 100%" note. Safe on an empty warehouse: every count is 0 and every
@@ -232,9 +238,9 @@ const TIER_CONVERSION_SQL = `
     COUNT(DISTINCT CASE WHEN m.ref_id IS NOT NULL THEN d.id END) AS meeting
   FROM accounts a
   JOIN drafts d ON d.ref_id = a.id
-  LEFT JOIN outcomes s ON s.ref_id = d.id AND s.ref_type = 'draft' AND s.result = 'sent'
-  LEFT JOIN outcomes r ON r.ref_id = d.id AND r.ref_type = 'draft' AND r.result = 'replied'
-  LEFT JOIN outcomes m ON m.ref_id = d.id AND m.ref_type = 'draft' AND m.result = 'meeting'
+  LEFT JOIN outcomes s ON s.ref_id = d.id AND s.ref_type = 'draft' AND s.data LIKE '%"result":"sent"%'
+  LEFT JOIN outcomes r ON r.ref_id = d.id AND r.ref_type = 'draft' AND r.data LIKE '%"result":"replied"%'
+  LEFT JOIN outcomes m ON m.ref_id = d.id AND m.ref_type = 'draft' AND m.data LIKE '%"result":"meeting"%'
   WHERE a.tier IS NOT NULL
   GROUP BY a.tier
 `;
