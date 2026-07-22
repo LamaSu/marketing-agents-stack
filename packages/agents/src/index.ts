@@ -19,4 +19,5 @@ export type {
   ContextBlock,
   RunAgentConfig,
   AnthropicClient,
+  AnthropicMessageStream,
 } from "./types.js";

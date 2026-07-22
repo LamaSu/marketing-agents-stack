@@ -22,6 +22,12 @@ const out = await runAgent({
 
 The Anthropic client is **injectable** (`client` in the config). Omit it and it is built from `ANTHROPIC_API_KEY`; inject a fake in tests so the loop runs fully offline (no key, no network).
 
+## Tracing (OpenTelemetry) + opt-in streaming
+
+Every `runAgent` call, model call, and tool execution is wrapped in an OTel span (`@opentelemetry/api`). The tracer is resolved once via `trace.getTracer(...)`, which returns the **OTel no-op tracer** when no `TracerProvider` is registered — so the keyless demo emits nothing and needs no collector. To see traces, register any OTLP-compatible `TracerProvider` before the app starts (`@opentelemetry/api`'s registration is a proxy, so this can happen after `@mstack/agents` is imported). Span names: `agents.runAgent` (attributes: `model`, `prompt_hash` — a SHA-256 hash, never the raw prompt — plus `re_ask_fired` and `final_validation_result`), `agents.runAgent.model_call` (`model`, `input_tokens`, `output_tokens`, `latency_ms`, `streaming`), `agents.runAgent.tool_call` (`tool_name`).
+
+Pass `stream?: (delta: string) => void` in the config to opt into the Anthropic SDK's streaming API — `runAgent` then drives `client.messages.stream(...)` and calls it with each text delta as it arrives, while the tool-use loop is unaffected (both paths resolve to the same final `Message`). Omit it (the default) to keep the non-streaming path.
+
 ## Built-in tools (thin wrappers over the `@mstack/core` seams)
 
 - `retrieveTool(corpus: GuidelineCorpus)` — top-k approved-messaging passages (grounding "is this claim supported?").

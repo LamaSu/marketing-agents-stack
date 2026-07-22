@@ -18,6 +18,7 @@
   "dependencies": {
     "@mstack/core": "workspace:*",
     "@anthropic-ai/sdk": "latest",
+    "@opentelemetry/api": "^1.9.0",
     "zod": "^3.24.1",
     "zod-to-json-schema": "^3.24.1"
   },

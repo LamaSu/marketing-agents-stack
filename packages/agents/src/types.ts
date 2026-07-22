@@ -30,6 +30,19 @@ export interface AgentTool {
 }
 
 /**
+ * Minimal surface of the SDK's `MessageStream` (what `client.messages.stream(...)`
+ * returns) that `runAgent` depends on for opt-in streaming
+ * (research/10-sota-integration-design.md §2.1): async-iterable over stream
+ * events so text deltas can be extracted, plus `finalMessage()` for the same
+ * complete `Message` the non-streaming path already returns — so the tool-use
+ * loop needs no separate handling for the streamed case.
+ */
+export interface AnthropicMessageStream
+  extends AsyncIterable<Anthropic.MessageStreamEvent> {
+  finalMessage(): Promise<Anthropic.Message>;
+}
+
+/**
  * The minimal Anthropic client surface `runAgent` depends on. The real
  * `new Anthropic()` satisfies it; tests inject a fake so the loop runs offline.
  */
@@ -38,6 +51,15 @@ export interface AnthropicClient {
     create(
       params: Anthropic.MessageCreateParamsNonStreaming,
     ): Promise<Anthropic.Message>;
+    /**
+     * Optional: only exercised when `RunAgentConfig.stream` is set. Omit it on
+     * any fake client that doesn't test streaming — a client without this
+     * method is still a fully valid `AnthropicClient` for the (default)
+     * non-streaming path, so streaming stays opt-in end-to-end.
+     */
+    stream?(
+      params: Anthropic.MessageCreateParamsNonStreaming,
+    ): AnthropicMessageStream;
   };
 }
 
@@ -59,6 +81,14 @@ export interface RunAgentConfig<TIn, TOut> {
   client?: AnthropicClient;
   /** max model calls in the tool-use loop before forcing a final answer (default 8). */
   maxToolIterations?: number;
-  /** output token ceiling (default 8192; non-streaming). */
+  /** output token ceiling (default 8192). */
   maxTokens?: number;
+  /**
+   * Opt-in streaming (research/10-sota-integration-design.md §2.1): when
+   * present, `runAgent` drives the SDK's streaming API and calls this with
+   * each text delta as it arrives. Omit it (the default) to keep the
+   * non-streaming path — the tool-use loop behaves identically either way,
+   * since both resolve to the same final `Anthropic.Message`.
+   */
+  stream?: (delta: string) => void;
 }
