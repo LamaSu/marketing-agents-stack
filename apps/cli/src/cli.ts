@@ -14,7 +14,17 @@ import type { CliContext, ContextOverrides } from "./context.js";
 import { openContext } from "./context.js";
 import { runSeed } from "./seed.js";
 import { runDemo } from "./demo.js";
-import { runApprove, runExportAudit, runList, runReviewFile, runScoreDomain } from "./commands.js";
+import {
+  runApprove,
+  runExportAudit,
+  runIngestOutcomes,
+  runList,
+  runReport,
+  runReviewFile,
+  runScoreDomain,
+  runSequence,
+  runTrainQualifier,
+} from "./commands.js";
 import { printDemoResult, printHelp, printModeBanner, printSeedResult } from "./format.js";
 
 /** Run `fn` inside an opened context, printing the mode banner first and always
@@ -91,6 +101,24 @@ async function main(): Promise<number> {
       await withContext(overrides, (ctx) =>
         runExportAudit(ctx, { format: values.format, out: values.out }),
       );
+      return 0;
+
+    case "ingest-outcomes":
+      await withContext(overrides, (ctx) => runIngestOutcomes(ctx));
+      return 0;
+
+    case "report":
+      await withContext(overrides, (ctx) => runReport(ctx));
+      return 0;
+
+    case "sequence":
+      await withContext(overrides, (ctx) =>
+        runSequence(ctx, requireArg(positionals[1], "start|tick|list"), positionals[2]),
+      );
+      return 0;
+
+    case "train-qualifier":
+      await withContext(overrides, (ctx) => runTrainQualifier(ctx));
       return 0;
 
     default:

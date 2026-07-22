@@ -27,7 +27,10 @@
     "@mstack/account-intel": "workspace:*",
     "@mstack/adapters-signals": "workspace:*",
     "@mstack/adapters-enrichment": "workspace:*",
-    "@mstack/adapters-scoring": "workspace:*"
+    "@mstack/adapters-scoring": "workspace:*",
+    "@mstack/adapters-outcomes": "workspace:*",
+    "@mstack/analytics": "workspace:*",
+    "@mstack/sequences": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^2.1.0",
