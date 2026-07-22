@@ -14,7 +14,7 @@ import type { LabeledExample, QualifierCandidate } from "@mstack/adapters-scorin
 import { DirectExecutor, LocalOutreachChannel, approveAndDispatch } from "@mstack/runtime";
 import { reviewAsset } from "@mstack/reviewer";
 import { exportAuditHalo, writeHaloAudit } from "@mstack/memory";
-import { buildGtmReport } from "@mstack/analytics";
+import { buildGtmReport, type GtmReport } from "@mstack/analytics";
 import { ingestOutcomes, sampleOutcomeSource } from "@mstack/adapters-outcomes";
 import {
   advanceSequence,
@@ -39,6 +39,7 @@ import {
   printSequenceTickResult,
   printTrainQualifierResult,
 } from "./format.js";
+import type { TrainQualifierSummary } from "./format.js";
 
 /**
  * `mstack approve <draftId>` — approve + dispatch through the one gated path
@@ -154,9 +155,8 @@ export async function runIngestOutcomes(ctx: CliContext): Promise<void> {
  * from the warehouse by `@mstack/analytics` (read-only, deterministic, offline). Safe on an
  * empty warehouse (every count zero-fills).
  */
-export async function runReport(ctx: CliContext): Promise<void> {
-  const report = await buildGtmReport(ctx.memory);
-  printReport(report);
+export async function runReport(ctx: CliContext): Promise<GtmReport> {
+  return buildGtmReport(ctx.memory);
 }
 
 /**
@@ -282,7 +282,7 @@ async function loadAccountCandidates(ctx: CliContext): Promise<QualifierCandidat
  * example internally via the package's `featurize`. An empty example set resets to the cold-start
  * prior (no crash) — every account then routes to review, which is correct cold-start behavior.
  */
-export async function runTrainQualifier(ctx: CliContext): Promise<void> {
+export async function runTrainQualifier(ctx: CliContext): Promise<TrainQualifierSummary> {
   const outcomeRows = await ctx.memory.query<{ data: string }>(
     "SELECT data FROM outcomes WHERE ref_type = 'draft'",
   );
@@ -318,7 +318,7 @@ export async function runTrainQualifier(ctx: CliContext): Promise<void> {
   const candidates = await loadAccountCandidates(ctx);
   const topReview = qualifier.selectForReview(candidates, 1)[0];
 
-  printTrainQualifierResult({
+  return {
     trained: examples.length,
     skippedNonTerminal,
     skippedNoJoin,
@@ -330,5 +330,5 @@ export async function runTrainQualifier(ctx: CliContext): Promise<void> {
           informationGain: topReview.informationGain,
         }
       : undefined,
-  });
+  };
 }

@@ -25,7 +25,14 @@ import {
   runSequence,
   runTrainQualifier,
 } from "./commands.js";
-import { printDemoResult, printHelp, printModeBanner, printSeedResult } from "./format.js";
+import {
+  printDemoResult,
+  printHelp,
+  printModeBanner,
+  printReport,
+  printSeedResult,
+  printTrainQualifierResult,
+} from "./format.js";
 
 /** Run `fn` inside an opened context, printing the mode banner first and always
  *  closing the warehouse afterward (single-writer discipline). */
@@ -108,7 +115,7 @@ async function main(): Promise<number> {
       return 0;
 
     case "report":
-      await withContext(overrides, (ctx) => runReport(ctx));
+      await withContext(overrides, async (ctx) => printReport(await runReport(ctx)));
       return 0;
 
     case "sequence":
@@ -118,7 +125,7 @@ async function main(): Promise<number> {
       return 0;
 
     case "train-qualifier":
-      await withContext(overrides, (ctx) => runTrainQualifier(ctx));
+      await withContext(overrides, async (ctx) => printTrainQualifierResult(await runTrainQualifier(ctx)));
       return 0;
 
     default:

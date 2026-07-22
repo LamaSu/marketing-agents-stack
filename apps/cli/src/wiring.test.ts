@@ -6,12 +6,13 @@
  * INVARIANT under test throughout: the new commands NEVER send. `sequence` queues PENDING drafts
  * into the existing gate; the outbox stays empty and no draft is dispatched.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { Outcome, newId } from "@mstack/core";
+import { formatReport } from "@mstack/analytics";
 import { exampleSequence, openSequenceStore, startSequenceRun } from "@mstack/sequences";
 
 import type { CliContext } from "./context.js";
@@ -24,17 +25,6 @@ import { runIngestOutcomes, runReport, runSequence, runTrainQualifier } from "./
 async function outboxJsonCount(dir: string): Promise<number> {
   const entries = await readdir(dir).catch(() => [] as string[]);
   return entries.filter((f) => f.endsWith(".json")).length;
-}
-
-/** Run `fn`, capturing everything it writes to console.log as one joined string. */
-async function captureLog(fn: () => Promise<void>): Promise<string> {
-  const spy = vi.spyOn(console, "log").mockImplementation(() => undefined);
-  try {
-    await fn();
-  } finally {
-    spy.mockRestore();
-  }
-  return spy.mock.calls.map((call) => call.join(" ")).join("\n");
 }
 
 describe("mstack Wave-F commands (offline)", () => {
@@ -70,7 +60,9 @@ describe("mstack Wave-F commands (offline)", () => {
     await runSeed(ctx);
     await runIngestOutcomes(ctx);
 
-    const text = await captureLog(() => runReport(ctx));
+    // runReport returns the GtmReport; formatReport renders the exact string the
+    // command prints (printReport does `console.log(formatReport(report))`).
+    const text = formatReport(await runReport(ctx));
     expect(text.length).toBeGreaterThan(0);
     expect(text).toContain("GTM FUNNEL");
     expect(text).toContain("CONVERSION BY ACCOUNT TIER");
@@ -116,7 +108,8 @@ describe("mstack Wave-F commands (offline)", () => {
   });
 
   it("train-qualifier handles an empty-outcome warehouse without crashing", async () => {
-    await expect(runTrainQualifier(ctx)).resolves.toBeUndefined();
+    const summary = await runTrainQualifier(ctx);
+    expect(summary.trained).toBe(0); // no outcomes -> cold-start prior, no crash
   });
 
   it("train-qualifier fits on seeded data joined through a real outreach outcome", async () => {
@@ -139,9 +132,9 @@ describe("mstack Wave-F commands (offline)", () => {
       }),
     );
 
-    const text = await captureLog(() => runTrainQualifier(ctx));
-    expect(text).toContain("train-qualifier");
+    const summary = await runTrainQualifier(ctx);
     // trained on >=1 example (the joined reply), proving the outcome->draft->account join works.
-    expect(text).toMatch(/trained on [1-9]\d* labeled example/);
+    expect(summary.trained).toBeGreaterThanOrEqual(1);
+    expect(summary.fitted).toBe(true);
   });
 });
