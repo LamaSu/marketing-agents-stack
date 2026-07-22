@@ -24,6 +24,7 @@
  */
 import { nowIso } from "@mstack/core";
 import { type CredentialBroker, type ProxyRequest, type ProxyResponse, type LogSink } from "./types.js";
+import { type DpopSigner } from "./dpop.js";
 import { consoleLogSink } from "./util.js";
 import { ProviderRegistry, defaultRegistry } from "./registry.js";
 
@@ -33,6 +34,11 @@ export type GcInvoke = (tool: string, args: Record<string, unknown>) => Promise<
 export interface GatecraftBrokerOptions {
   registry?: ProviderRegistry;
   log?: LogSink;
+  /**
+   * OPT-IN DPoP request-binding (RFC 9449). When supplied, a `DPoP` proof (bound to method+url)
+   * is added to the forwarded request headers so gatecraft can relay it upstream. Default off.
+   */
+  dpopSigner?: DpopSigner;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -44,11 +50,13 @@ export class GatecraftBroker implements CredentialBroker {
   readonly #gcInvoke: GcInvoke;
   readonly #registry: ProviderRegistry;
   readonly #log: LogSink;
+  readonly #dpopSigner: DpopSigner | undefined;
 
   constructor(gcInvoke: GcInvoke, options: GatecraftBrokerOptions = {}) {
     this.#gcInvoke = gcInvoke;
     this.#registry = options.registry ?? defaultRegistry();
     this.#log = options.log ?? consoleLogSink;
+    this.#dpopSigner = options.dpopSigner;
   }
 
   /**
@@ -64,10 +72,15 @@ export class GatecraftBroker implements CredentialBroker {
 
   async proxyCall(req: ProxyRequest): Promise<ProxyResponse> {
     const provider = this.#registry.get(req.providerId);
+    // OPT-IN: bind the request to the agent key. `htu` inside the proof strips the query, so no
+    // gatecraft-injected secret can enter it. Default off -> forwarded headers are unchanged.
+    const headers = this.#dpopSigner
+      ? { ...(req.headers ?? {}), DPoP: this.#dpopSigner.proof({ htm: req.method, htu: req.url }) }
+      : req.headers;
     // Hint gatecraft which env-var-style key names are candidates for this provider,
     // mirroring LocalBroker's own keyNames[0] preference -- gatecraft still owns the
     // actual resolution + injection server-side; the secret never reaches this process.
-    const result = await this.#gcInvoke("gc_proxy_call", { ...req, keyNames: provider?.keyNames });
+    const result = await this.#gcInvoke("gc_proxy_call", { ...req, headers, keyNames: provider?.keyNames });
 
     if (!isRecord(result)) {
       throw new Error(`gatecraft gc_proxy_call: unexpected response shape for provider "${req.providerId}"`);

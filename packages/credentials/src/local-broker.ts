@@ -8,6 +8,7 @@
  */
 import { nowIso } from "@mstack/core";
 import { type CredentialBroker, type ProxyRequest, type ProxyResponse, type LogSink } from "./types.js";
+import { type DpopSigner } from "./dpop.js";
 import { consoleLogSink } from "./util.js";
 import { ProviderRegistry, defaultRegistry } from "./registry.js";
 
@@ -18,6 +19,12 @@ export interface LocalBrokerOptions {
   /** injectable for tests; defaults to globalThis.fetch. */
   fetchImpl?: typeof fetch;
   log?: LogSink;
+  /**
+   * OPT-IN request-binding (RFC 9449). When supplied, each proxyCall attaches a `DPoP` proof
+   * header bound to (method, url). Omit (the default) and behavior is byte-for-byte unchanged --
+   * the offline `mstack demo` path never sets this. See dpop.ts.
+   */
+  dpopSigner?: DpopSigner;
 }
 
 export class LocalBroker implements CredentialBroker {
@@ -26,12 +33,14 @@ export class LocalBroker implements CredentialBroker {
   readonly #env: Record<string, string | undefined>;
   readonly #fetchImpl: typeof fetch;
   readonly #log: LogSink;
+  readonly #dpopSigner: DpopSigner | undefined;
 
   constructor(options: LocalBrokerOptions = {}) {
     this.#registry = options.registry ?? defaultRegistry();
     this.#env = options.env ?? process.env;
     this.#fetchImpl = options.fetchImpl ?? fetch;
     this.#log = options.log ?? consoleLogSink;
+    this.#dpopSigner = options.dpopSigner;
   }
 
   /** The ONE place this class touches env. The value never leaves this method un-redacted. */
@@ -51,6 +60,9 @@ export class LocalBroker implements CredentialBroker {
     const secret = keyName ? this.#readEnv(keyName) : undefined;
 
     const headers: Record<string, string> = { ...(req.headers ?? {}) };
+    // OPT-IN: bind this request to the agent key. `htu` (inside proof) strips the query, so a
+    // query-injected secret below can never enter the proof. Bound to req.url (pre-injection).
+    if (this.#dpopSigner) headers["DPoP"] = this.#dpopSigner.proof({ htm: req.method, htu: req.url });
     let url = req.url;
     const headerName = req.authInject?.header;
     const queryName = req.authInject?.query;

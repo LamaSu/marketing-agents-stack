@@ -5,6 +5,7 @@
  * network / zero credentials.
  */
 import { type CredentialBroker, type LogSink } from "./types.js";
+import { type DpopSigner } from "./dpop.js";
 import { ProviderRegistry } from "./registry.js";
 import { LocalBroker } from "./local-broker.js";
 import { GatecraftBroker, type GcInvoke } from "./gatecraft-broker.js";
@@ -18,16 +19,23 @@ export interface OpenBrokerOptions {
   env?: Record<string, string | undefined>;
   /** LocalBroker only; defaults to globalThis.fetch. */
   fetchImpl?: typeof fetch;
+  /** OPT-IN DPoP request-binding (RFC 9449). Omit and both brokers behave exactly as before. */
+  dpopSigner?: DpopSigner;
 }
 
 export function openBroker(options: OpenBrokerOptions = {}): CredentialBroker {
   if (options.gcInvoke) {
-    return new GatecraftBroker(options.gcInvoke, { registry: options.registry, log: options.log });
+    return new GatecraftBroker(options.gcInvoke, {
+      registry: options.registry,
+      log: options.log,
+      dpopSigner: options.dpopSigner,
+    });
   }
   return new LocalBroker({
     registry: options.registry,
     log: options.log,
     env: options.env,
     fetchImpl: options.fetchImpl,
+    dpopSigner: options.dpopSigner,
   });
 }

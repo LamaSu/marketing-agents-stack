@@ -5,6 +5,7 @@
  * See research/06-architecture.md §3.3 + §5.1.
  */
 export * from "./types.js";
+export * from "./dpop.js";
 export * from "./util.js";
 export * from "./registry.js";
 export * from "./local-broker.js";
