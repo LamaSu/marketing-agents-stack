@@ -44,3 +44,8 @@ Thumbs.db
 # SOTA competitive analysis — LOCAL ONLY, never pushed (user directive 2026-07-21)
 research/sota/
 research/10-sota-integration-design.md
+# Build orchestration state + per-wave agent handoff notes — LOCAL ONLY (they
+# reference the SOTA-adoption plan; keep local so a fresh session/subagent can
+# resume with zero work lost, but never push the strategy).
+research/BUILD-STATE.md
+research/wave-*.md
