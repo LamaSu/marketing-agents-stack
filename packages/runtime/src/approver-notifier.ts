@@ -166,16 +166,22 @@ function buildContactSpec(
 export async function defaultLoadHumanLayerClient(
   config: Pick<HumanLayerNotifierConfig, "apiKey"> = {},
 ): Promise<HumanLayerLike> {
-  const mod = (await import("@humanlayer/sdk")) as unknown as {
+  interface HumanLayerSdkModule {
+    default?: HumanLayerSdkModule;
     humanlayer?: (opts?: { apiKey?: string }) => Partial<HumanLayerLike> | undefined;
     HumanLayer?: new (opts?: { apiKey?: string }) => Partial<HumanLayerLike>;
-  };
+  }
+  const mod = (await import("@humanlayer/sdk")) as unknown as HumanLayerSdkModule;
+  // `@humanlayer/sdk` is dual CJS/ESM; under CJS default-interop the named exports land on
+  // `mod.default`. Look at both so the default loader works either way (and still degrades
+  // gracefully below if neither shape is present).
+  const sdk: HumanLayerSdkModule = mod.default ?? mod;
   const apiKey = config.apiKey ?? process.env["HUMANLAYER_API_KEY"];
   const raw: Partial<HumanLayerLike> | undefined =
-    typeof mod.humanlayer === "function"
-      ? mod.humanlayer({ apiKey })
-      : mod.HumanLayer
-        ? new mod.HumanLayer({ apiKey })
+    typeof sdk.humanlayer === "function"
+      ? sdk.humanlayer({ apiKey })
+      : sdk.HumanLayer
+        ? new sdk.HumanLayer({ apiKey })
         : undefined;
 
   const createHumanContact = raw?.createHumanContact;
