@@ -48,7 +48,8 @@ this package's production source and fails if any send/approval call site ever a
 
 ## The runner
 
-`advanceSequence(run, sequence, deps)` moves one run forward by **at most one step**:
+`advanceSequence(run, deps)` moves one run forward by **at most one step** (it resolves the
+run's `Sequence` template from the store by `run.sequenceId`):
 
 - run not `active` → returned unchanged (terminal).
 - current step honors replies **and** a `replied`/`meeting` `Outcome` exists for the run's
@@ -102,7 +103,8 @@ let run = startSequenceRun(seq, "acme.com");
 await store.saveRun(run);
 
 // Call this on your schedule. Each due step queues ONE pending draft.
-run = await advanceSequence(run, seq, { memory, drafts, store, executor });
+// (The sequence template is resolved from the store by run.sequenceId.)
+run = await advanceSequence(run, { memory, drafts, store, executor });
 
 const pending = await drafts.listPending();          // ← the human's approval queue
 // ...a human calls drafts.approve(id, actor), then dispatchDraft sends. Never the cadence.

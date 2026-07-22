@@ -58,7 +58,7 @@ describe("@mstack/sequences — cadence engine (queues pending Drafts, never sen
     let run = startSequenceRun(seq, "acme.com", { now: () => clock });
     await seqStore.saveRun(run);
 
-    run = await advanceSequence(run, seq, deps);
+    run = await advanceSequence(run, deps);
 
     // exactly one draft queued; the run moved to the next step and is still active.
     expect(run.currentStep).toBe(1);
@@ -85,19 +85,19 @@ describe("@mstack/sequences — cadence engine (queues pending Drafts, never sen
     await seqStore.saveRun(run);
 
     // day 0: step-1 (delayDays 0) queues.
-    run = await advanceSequence(run, seq, deps);
+    run = await advanceSequence(run, deps);
     expect(run.currentStep).toBe(1);
     expect(run.queuedDraftIds).toHaveLength(1);
 
     // still day 0: step-2 (delayDays 3) is NOT due — pure no-op, nothing new queued.
-    run = await advanceSequence(run, seq, deps);
+    run = await advanceSequence(run, deps);
     expect(run.currentStep).toBe(1);
     expect(run.queuedDraftIds).toHaveLength(1);
     expect(await draftStore.listPending()).toHaveLength(1);
 
     // day 3: step-2 is due — queues and the run completes (last step reached).
     clock = plusDays(DAY0, 3);
-    run = await advanceSequence(run, seq, deps);
+    run = await advanceSequence(run, deps);
     expect(run.currentStep).toBe(2);
     expect(run.status).toBe("completed");
     expect(run.queuedDraftIds).toHaveLength(2);
@@ -113,7 +113,7 @@ describe("@mstack/sequences — cadence engine (queues pending Drafts, never sen
     await seqStore.saveRun(run);
 
     // day 0: step-1 queues its draft.
-    run = await advanceSequence(run, seq, deps);
+    run = await advanceSequence(run, deps);
     expect(run.currentStep).toBe(1);
     const firstDraftId = String(run.queuedDraftIds[0]);
 
@@ -131,13 +131,13 @@ describe("@mstack/sequences — cadence engine (queues pending Drafts, never sen
 
     // day 3: step-2 WOULD be due — but the reply stops the run first.
     clock = plusDays(DAY0, 3);
-    run = await advanceSequence(run, seq, deps);
+    run = await advanceSequence(run, deps);
     expect(run.status).toBe("stopped");
     expect(run.currentStep).toBe(1); // never advanced past the replied-to step
     expect(run.queuedDraftIds).toHaveLength(1); // step-2 draft was never created
 
     // a stopped run is terminal — advancing again is a no-op.
-    run = await advanceSequence(run, seq, deps);
+    run = await advanceSequence(run, deps);
     expect(run.status).toBe("stopped");
     expect(await draftStore.listPending()).toHaveLength(1);
   });
@@ -146,9 +146,9 @@ describe("@mstack/sequences — cadence engine (queues pending Drafts, never sen
     let run = startSequenceRun(seq, "acme.com", { now: () => clock });
     await seqStore.saveRun(run);
 
-    run = await advanceSequence(run, seq, deps); // step-1
+    run = await advanceSequence(run, deps); // step-1
     clock = plusDays(DAY0, 3);
-    run = await advanceSequence(run, seq, deps); // step-2 -> completed
+    run = await advanceSequence(run, deps); // step-2 -> completed
     expect(run.status).toBe("completed");
 
     // NO Approval was written by the runner (a human hasn't approved anything yet).
@@ -179,7 +179,7 @@ describe("@mstack/sequences — cadence engine (queues pending Drafts, never sen
   it("run persistence round-trips through the SequenceStore", async () => {
     let run = startSequenceRun(seq, "acme.com", { now: () => clock });
     await seqStore.saveRun(run);
-    run = await advanceSequence(run, seq, deps);
+    run = await advanceSequence(run, deps);
 
     const reloaded = await seqStore.getRun(run.id);
     expect(reloaded?.currentStep).toBe(1);

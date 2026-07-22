@@ -88,6 +88,11 @@ export function startSequenceRun(
 /**
  * Advance ONE run by at most one step. Returns the (possibly updated) run.
  *
+ * The run's `Sequence` template is resolved from `deps.store` by `run.sequenceId`, so a
+ * scheduler can iterate over run rows and call `advanceSequence(run, deps)` without also
+ * carrying the templates. (Save the sequence via `SequenceStore#saveSequence` before enrolling
+ * runs into it.)
+ *
  *   - not `active`            -> terminal; returned unchanged (no write)
  *   - current step honors replies AND a reply/meeting Outcome exists -> `stopped`
  *   - current step's `delayDays` not yet elapsed since `lastStepAt` -> no-op (no write)
@@ -96,13 +101,16 @@ export function startSequenceRun(
  *
  * Persists the run via `deps.store` whenever it changes; a pure no-op does not write.
  */
-export async function advanceSequence(
-  run: SequenceRun,
-  sequence: Sequence,
-  deps: AdvanceDeps,
-): Promise<SequenceRun> {
+export async function advanceSequence(run: SequenceRun, deps: AdvanceDeps): Promise<SequenceRun> {
   // A run only moves while active. Stopped/completed runs are terminal.
   if (run.status !== "active") return run;
+
+  const sequence = await deps.store.getSequence(run.sequenceId);
+  if (!sequence) {
+    throw new Error(
+      `advanceSequence: no sequence "${run.sequenceId}" on record for run "${run.id}"`,
+    );
+  }
 
   const steps = [...sequence.steps].sort((a, b) => a.order - b.order);
 
