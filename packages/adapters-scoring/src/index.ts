@@ -7,3 +7,4 @@ export * from "./claude-scorer.js";
 export * from "./onnx-scorer.js";
 export * from "./hybrid-scorer.js";
 export * from "./factory.js";
+export * from "./qualifier.js";
