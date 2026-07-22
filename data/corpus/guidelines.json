@@ -178,5 +178,14 @@
     "severity": "low",
     "source": "klz-partner-marketing-v1",
     "version": "1"
+  },
+  {
+    "id": "gl-deny-pii-1",
+    "category": "pii_leak",
+    "type": "denylist",
+    "content": "Partner content must not include personal data about individuals outside the approved-spokesperson context: email addresses, Social Security Numbers, phone numbers, or payment-card numbers. Redact or remove any such data before publishing, and escalate to KLZ Partner Marketing if a submission appears to contain it.",
+    "severity": "high",
+    "source": "klz-partner-marketing-v1",
+    "version": "1"
   }
 ]

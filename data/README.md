@@ -16,7 +16,7 @@ credentials and zero network calls** (research/06-architecture.md §5.2).
 |---|---|---|
 | `signals.sample.jsonl` | one `Signal` (packages/core `schemas.ts`) per line | 85 |
 | `accounts.sample.json` | JSON array of `EnrichmentRecord` (packages/core `seams.ts`) | 30 |
-| `corpus/guidelines.json` | JSON array of `Guideline` (packages/core `schemas.ts`) | 20 |
+| `corpus/guidelines.json` | JSON array of `Guideline` (packages/core `schemas.ts`) | 21 |
 | `corpus/approved-messaging.md` | prose — the RAG-ingest source | — |
 | `corpus/assets/assets.json` | JSON array of `ReviewRequest` (packages/core `schemas.ts`) | 4 |
 
@@ -51,14 +51,16 @@ Security persona heatmap. Every `contacts[].persona` uses the real `Persona` enu
 
 ### `corpus/guidelines.json`
 
-The reviewer's machine-checkable north star: 20 `Guideline` rows covering all five
-`GuidelineType` values and all six `ClaimCategory` values —
+The reviewer's machine-checkable north star: 21 `Guideline` rows covering all five
+`GuidelineType` values and all seven `ClaimCategory` values —
 
 - **`lexicon`** (5 rows) — guarantee-word rules (`guarantee`/`guaranteed`/`ensures`/
   `promise`) and banned-superlative rules (`no other platform comes close`,
   `best-in-class`, `unmatched`, …), plus the uncited-quantitative-claim rule.
-- **`denylist`** (3 rows) — roadmap/unannounced-codename rules (`Agent Marketplace`,
-  internal codenames, any unannounced forward-looking date).
+- **`denylist`** (4 rows) — roadmap/unannounced-codename rules (`Agent Marketplace`,
+  internal codenames, any unannounced forward-looking date), plus a `pii_leak` rule
+  (email addresses, SSNs, phone numbers, payment-card numbers — added Wave B2;
+  see `packages/reviewer/src/rules.ts`'s `scanPii`/`presidioScan`).
 - **`allowlist`** (3 rows) — the two approved KLZ spokespeople (Dana Whitfield, Sam
   Okafor) plus their two approved, verbatim-usable quotes.
 - **`tier_map`** (2 rows) — the badge rule the demo calls out explicitly: "Powered by
