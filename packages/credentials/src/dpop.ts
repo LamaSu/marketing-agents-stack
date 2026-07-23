@@ -208,8 +208,14 @@ export function createDpopSigner(keyPair: DpopKeyPair, options: DpopSignerOption
  * one replica could be replayed against another. Supply it via `DpopVerifyOptions.jtiStore`.
  */
 export interface JtiStore {
-  /** Atomically record `jti`. Returns true if it was NEW (accept), false if already seen (replay). */
-  consume(jti: string): boolean;
+  /**
+   * Atomically record `jti`. Returns true if it was NEW (accept), false if already seen (replay).
+   * May be sync (the in-memory default) OR async: a shared/atomic store (e.g. Redis
+   * `SET jti <v> NX PX <ttl>`) returns a `Promise<boolean>`, which `verifyDpopProof` awaits. The
+   * implementation MUST be an atomic check-and-record so two racing verifications of the same proof
+   * cannot both accept it.
+   */
+  consume(jti: string): boolean | Promise<boolean>;
 }
 
 /**
@@ -281,9 +287,16 @@ export interface DpopVerifyOptions {
   /**
    * Consuming single-use replay store. Defaults to a process-local singleton, so replays are
    * rejected out of the box; supply a shared atomic store for multi-process deployments (see
-   * `JtiStore`). `consume(jti)` returning false (a duplicate) makes verification fail `reason:"replay"`.
+   * `JtiStore`). `consume` returning false (a duplicate) makes verification fail `reason:"replay"`;
+   * `consume` may be async (awaited). A store that throws fails CLOSED (`reason:"replay store error"`).
    */
   jtiStore?: JtiStore;
+  /**
+   * If provided, the proof's RFC 7638 JWK thumbprint (`jkt`) must equal this exactly -- binds the
+   * proof to a specific expected key (e.g. the `cnf.jkt` of a presented access token). Omit to
+   * accept any key that otherwise verifies. Mismatch -> `reason:"jkt mismatch"`.
+   */
+  expectedJkt?: string;
 }
 
 export type DpopVerifyResult =
@@ -323,11 +336,14 @@ function verifyJose(signingInput: string, signature: Buffer, jwk: DpopPublicJwk,
 
 /**
  * Verify a DPoP proof against the request it should be bound to. Order: structure -> signature
- * (authenticity first) -> `htm`/`htu` binding -> freshness (`iat`) -> optional nonce/replay.
- * Returns the RFC 7638 `jkt` on success so a caller can bind the proof to an access token.
- * Fails closed on any malformed input (never throws to the caller).
+ * (authenticity first) -> optional `expectedJkt` -> `htm`/`htu` binding -> freshness (`iat`) ->
+ * optional nonce -> replay. Returns the RFC 7638 `jkt` on success so a caller can bind the proof
+ * to an access token. Replay is scoped PER KEY: the consuming store is keyed on `(jkt, jti)`, so
+ * two different keys that mint the same `jti` never collide. `async` because the replay store's
+ * `consume` may be async (a shared atomic store) -- returns `Promise<DpopVerifyResult>`. Fails
+ * closed on any malformed input (a bad proof RESOLVES to `{valid:false}`; it never throws/rejects).
  */
-export function verifyDpopProof(proofJwt: string, options: DpopVerifyOptions): DpopVerifyResult {
+export async function verifyDpopProof(proofJwt: string, options: DpopVerifyOptions): Promise<DpopVerifyResult> {
   const maxAgeSeconds = options.maxAgeSeconds ?? 300;
   const clockSkewSeconds = options.clockSkewSeconds ?? 5;
   const nowSec = Math.floor((options.now ?? Date.now()) / 1000);
@@ -372,6 +388,9 @@ export function verifyDpopProof(proofJwt: string, options: DpopVerifyOptions): D
   if ((header.alg === "ES256") !== (jwk.kty === "EC")) {
     return { valid: false, reason: "jwk/alg mismatch" };
   }
+  // RFC 7638 thumbprint of the embedded key -- the proof's bound-key identity. Computed once and
+  // reused for the optional expectedJkt gate, the per-key replay key, and the success return.
+  const jkt = jwkThumbprint(jwk);
 
   let signatureOk: boolean;
   try {
@@ -380,6 +399,12 @@ export function verifyDpopProof(proofJwt: string, options: DpopVerifyOptions): D
     return { valid: false, reason: "signature verification error" };
   }
   if (!signatureOk) return { valid: false, reason: "bad signature" };
+
+  // Optional key binding: the proof must come from the key the caller expects (e.g. a token's
+  // cnf.jkt). Checked after authenticity so a wrong-key proof is still signature-verified first.
+  if (options.expectedJkt !== undefined && jkt !== options.expectedJkt) {
+    return { valid: false, reason: "jkt mismatch" };
+  }
 
   // Binding checks -- this is what makes a captured proof non-replayable against another target.
   if (payload.htm.toUpperCase() !== options.htm.toUpperCase()) {
@@ -409,8 +434,17 @@ export function verifyDpopProof(proofJwt: string, options: DpopVerifyOptions): D
   }
   // Replay is the LAST check: consume the jti only after EVERY other check has passed, so an
   // attacker cannot burn or poison jtis by sending proofs that fail signature/binding/freshness.
+  // Keyed on (jkt, jti), not bare jti -- replay is a specific key reusing a specific id, so two
+  // different keys minting the same jti never collide (no cross-key false "replay"). `consume` may
+  // be async (a shared atomic store) so it is awaited; a store that THROWS fails closed (rejected).
   const jtiStore = options.jtiStore ?? defaultJtiStore;
-  if (!jtiStore.consume(payload.jti)) return { valid: false, reason: "replay" };
+  let accepted: boolean;
+  try {
+    accepted = await jtiStore.consume(`${jkt}:${payload.jti}`);
+  } catch {
+    return { valid: false, reason: "replay store error" };
+  }
+  if (!accepted) return { valid: false, reason: "replay" };
 
-  return { valid: true, jkt: jwkThumbprint(jwk), payload };
+  return { valid: true, jkt, payload };
 }
