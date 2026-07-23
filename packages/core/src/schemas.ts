@@ -75,7 +75,16 @@ export type ContentType = z.infer<typeof ContentType>;
 export const DraftKind = z.enum(["partner_email", "outreach_email", "review_export"]);
 export type DraftKind = z.infer<typeof DraftKind>;
 
-export const DraftStatus = z.enum(["pending", "approved", "rejected", "dispatched"]);
+/**
+ * Draft lifecycle. `dispatching` is the IN-FLIGHT state (ADDITIVE): the atomic claim in
+ * `@mstack/runtime`'s `dispatchDraft` flips `approved -> dispatching` immediately before the
+ * channel call, so exactly one caller can win the send. On a successful send it advances
+ * `dispatching -> dispatched`; if the channel THROWS it reverts `dispatching -> approved` so a
+ * legitimate retry can re-send (no permanent delivery loss). A process crash mid-send leaves a
+ * draft stuck in `dispatching`; the send path refuses a FRESH dispatch of such a draft (no
+ * double-send) and it needs operator re-drive (a timeout-based reclaim is a documented follow-up).
+ */
+export const DraftStatus = z.enum(["pending", "approved", "rejected", "dispatching", "dispatched"]);
 export type DraftStatus = z.infer<typeof DraftStatus>;
 
 export const ApprovalDecision = z.enum(["approve", "reject", "edit"]);
@@ -273,12 +282,17 @@ export const Approval = z.object({
   decision: ApprovalDecision,
   actor: z.string(),
   note: z.string().optional(),
-  /** OPTIONAL, backward-compatible content binding: sha256 of the approved draft's
-   *  dispatch-relevant content (subject/body/channel/refId/kind) at approval time.
-   *  When present, `dispatch.ts` refuses to send if the persisted draft's content no
-   *  longer matches — an approve-then-swap guard. Absent on pre-existing rows and on
-   *  non-draft (review) approvals, which remain valid. Computed by
-   *  `@mstack/runtime`'s `draftContentHash`. */
+  /** Content binding: sha256 of the approved draft's dispatch-relevant content — the WHOLE
+   *  persisted Draft MINUS its (mutating) `status` — computed at approval time by
+   *  `@mstack/runtime`'s `draftContentHash`. `dispatch.ts` recomputes it against the persisted
+   *  draft at send time and refuses if it no longer matches (an approve-then-swap guard covering
+   *  every field a channel could read, incl. a custom Composio `mapDraft`: subject/body/channel/
+   *  refId/kind/createdBy/createdAt/id).
+   *
+   *  Kept `.optional()` at the SCHEMA level ONLY so older rows and non-draft (review) approvals,
+   *  which carry no `contentHash`, still PARSE. The SEND PATH, however, now REQUIRES it:
+   *  `assertDispatchable` refuses to dispatch a draft whose recorded approval has no `contentHash`.
+   *  Going-forward draft approvals always carry one (set by `DraftStore#approve`). */
   contentHash: z.string().optional(),
   ts: z.string(),
   prevHash: z.string(),
