@@ -1,33 +1,36 @@
 /**
- * content-hash.ts — the stable hash that binds an `Approval` to the exact draft
- * CONTENT a human approved, so a post-approval content swap (approve body X,
- * `putDraft` body Y, send Y) is caught at the gate rather than delivered.
+ * content-hash.ts — the stable hash that binds an `Approval` to the exact draft CONTENT a human
+ * approved, so a post-approval content swap (approve body X, `putDraft` body Y, send Y) is caught
+ * at the gate rather than delivered.
  *
  * The SAME function both SETS the hash (`DraftStore#approve`) and CHECKS it
- * (`dispatch.ts#assertDispatchable`), so the two can never drift. It hashes only
- * the dispatch-relevant slice of a draft — the fields a channel actually sends —
- * not volatile bookkeeping (id/status/createdAt/createdBy), so ordinary
- * re-approval bookkeeping never spuriously invalidates an unchanged draft.
+ * (`dispatch.ts#assertDispatchable`), so the two can never drift.
  *
- * `canonicalJson` (key-sorted, deterministic) is reused from `@mstack/memory` so
- * this hash is order-independent, exactly like the audit chain's. This hash is
- * INDEPENDENT of the audit-chain hash — it pins content, not chain linkage.
+ * WHAT IT COVERS: the WHOLE persisted `Draft` MINUS its `status`. Every field a channel — including
+ * a custom Composio-style `mapDraft` — could read into an outbound message is bound: subject, body,
+ * channel, refId, kind, createdBy, createdAt, id (and any field later added to `Draft`, since it
+ * spreads the object rather than listing fields). `status` is the ONE field deliberately excluded:
+ * it is control-plane, not content, and legitimately changes across the lifecycle
+ * (pending -> approved -> dispatching -> dispatched). Including it would make the approve-time hash
+ * (computed over a `pending`/`approved` draft) never equal the send-time hash (checked over an
+ * `approved` draft), breaking every legitimate send. Excluding exactly `status` is what keeps the
+ * binding both tight (no content field escapes) and stable (ordinary status transitions don't
+ * spuriously invalidate an unchanged draft).
+ *
+ * `canonicalJson` (key-sorted, deterministic) is reused from `@mstack/memory` so this hash is
+ * order-independent, exactly like the audit chain's. This hash is INDEPENDENT of the audit-chain
+ * hash — it pins content, not chain linkage.
  */
 import { sha256Hex } from "@mstack/core";
 import type { Draft } from "@mstack/core";
 import { canonicalJson } from "@mstack/memory";
 
-/** sha256 of the dispatch-relevant content of a draft (subject/body/channel/refId/kind). */
-export function draftContentHash(
-  draft: Pick<Draft, "subject" | "body" | "channel" | "refId" | "kind">,
-): string {
-  return sha256Hex(
-    canonicalJson({
-      subject: draft.subject,
-      body: draft.body,
-      channel: draft.channel,
-      refId: draft.refId,
-      kind: draft.kind,
-    }),
-  );
+/** sha256 of the dispatch-relevant content of a draft: the whole persisted Draft minus `status`. */
+export function draftContentHash(draft: Draft): string {
+  // Spread + delete (rather than an explicit field list) so any field added to `Draft` in future
+  // is bound automatically and cannot silently escape the content binding.
+  const content: Record<string, unknown> = { ...draft };
+  delete content.status;
+  return sha256Hex(canonicalJson(content));
 }
+</content>
