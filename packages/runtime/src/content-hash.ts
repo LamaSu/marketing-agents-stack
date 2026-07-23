@@ -33,4 +33,3 @@ export function draftContentHash(draft: Draft): string {
   delete content.status;
   return sha256Hex(canonicalJson(content));
 }
-</content>
