@@ -226,6 +226,34 @@ describe("DPoP verify guards", () => {
   });
 });
 
+// --- replay store: expiry-based eviction (#9b) -------------------------------
+
+describe("#9b: jti store evicts by expiry, never by volume", () => {
+  it("does NOT evict a still-fresh jti under a flood (no count-based eviction)", () => {
+    let nowMs = FIXED_MS;
+    const store = createMemoryJtiStore({ maxEntries: 3, ttlSeconds: 300, clock: () => nowMs });
+    expect(store.consume("victim")).toBe(true); // a fresh jti we must never forget while it is in-window
+    expect(store.consume("f1")).toBe(true);
+    expect(store.consume("f2")).toBe(true); // now at capacity (3), all unexpired
+    // a 4th fresh jti must NOT silently evict "victim" -- it is rejected as full (fail closed)...
+    expect(store.consume("f3")).toBe(false);
+    // ...and "victim" is still remembered, so replaying it is still caught (it was NOT evicted by volume):
+    expect(store.consume("victim")).toBe(false);
+  });
+
+  it("reclaims capacity once entries EXPIRE (not by forgetting a fresh jti)", () => {
+    let nowMs = FIXED_MS;
+    const store = createMemoryJtiStore({ maxEntries: 2, ttlSeconds: 300, clock: () => nowMs });
+    expect(store.consume("a")).toBe(true);
+    expect(store.consume("b")).toBe(true); // full
+    expect(store.consume("c")).toBe(false); // rejected while a,b are still fresh
+    nowMs += 301_000; // advance past the ttl -> a,b are now expired (outside any verifier window)
+    expect(store.consume("c")).toBe(true); // capacity reclaimed by EXPIRY
+    expect(store.consume("a")).toBe(true); // a's slot was freed by expiry; a re-appearing jti is fine
+    // (a proof carrying an expired iat is rejected on FRESHNESS before it ever reaches the store)
+  });
+});
+
 // --- the private key never leaves the signer --------------------------------
 
 describe("DPoP key custody", () => {

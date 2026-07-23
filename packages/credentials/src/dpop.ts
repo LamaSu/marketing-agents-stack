@@ -213,23 +213,43 @@ export interface JtiStore {
 }
 
 /**
- * A process-local, bounded consuming `JtiStore` backed by a `Set` (insertion-ordered, so eviction
- * is FIFO). `maxEntries` caps memory; because DPoP proofs are short-lived (verify enforces
- * `maxAgeSeconds`, default 300s), an evicted jti is already outside the freshness window and cannot
- * be replayed anyway -- keep `maxEntries` comfortably above peak in-window proof volume. Not shared
- * across processes (see `JtiStore` doc).
+ * A process-local, bounded consuming `JtiStore` backed by a `Map<jti, expiryMs>`.
+ *
+ * Eviction is by EXPIRY, never by count. This fixes the earlier count-based (FIFO) eviction, where
+ * submitting more than `maxEntries` fresh proofs would evict a STILL-FRESH jti and let it replay
+ * inside its freshness window. Here a jti is retained until `now >= consumeTime + ttl` and is only
+ * dropped once it is outside the window a verifier would accept. All entries share one `ttlSeconds`,
+ * so Map insertion order IS expiry order -- purging is an amortized-O(1) sweep from the front.
+ * `maxEntries` bounds memory: if it is reached while EVERY entry is still unexpired, a new jti is
+ * REJECTED (fail closed) rather than silently forgetting a fresh one -- an unexpired jti is never
+ * dropped. Raise `maxEntries` (or use a shared store) if legitimate in-window volume can exceed it.
+ *
+ * `ttlSeconds` MUST be >= the verifier's `maxAgeSeconds` (both default 300): the store has to
+ * remember a jti for at least as long as a verifier will still accept the proof, or a purged-early
+ * jti could be replayed. It records at consume time (>= the proof's `iat`), so `consumeTime + ttl`
+ * covers the whole `iat + maxAge` acceptance window. Not shared across processes (see `JtiStore`
+ * doc); `clock` is injectable for deterministic tests.
  */
-export function createMemoryJtiStore(options: { maxEntries?: number } = {}): JtiStore {
+export function createMemoryJtiStore(
+  options: { maxEntries?: number; ttlSeconds?: number; clock?: () => number } = {},
+): JtiStore {
   const maxEntries = options.maxEntries ?? 100_000;
-  const seen = new Set<string>();
+  const ttlMs = (options.ttlSeconds ?? 300) * 1000;
+  const clock = options.clock ?? Date.now;
+  // jti -> expiry (ms epoch). Uniform ttl => insertion order == expiry order (front expires first).
+  const seen = new Map<string, number>();
   return {
     consume(jti: string): boolean {
-      if (seen.has(jti)) return false;
-      seen.add(jti);
-      if (seen.size > maxEntries) {
-        const oldest = seen.values().next().value; // FIFO: Set preserves insertion order
-        if (typeof oldest === "string") seen.delete(oldest);
+      const now = clock();
+      // Purge expired entries from the front; stop at the first still-fresh one (uniform ttl).
+      for (const [k, expiry] of seen) {
+        if (expiry > now) break;
+        seen.delete(k);
       }
+      if (seen.has(jti)) return false; // unexpired duplicate == replay
+      // Full of UNEXPIRED entries: fail closed instead of evicting a still-fresh jti by volume.
+      if (seen.size >= maxEntries) return false;
+      seen.set(jti, now + ttlMs);
       return true;
     },
   };
