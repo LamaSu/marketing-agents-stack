@@ -93,10 +93,10 @@ describe("LocalBroker.proxyCall", () => {
     expect(JSON.parse(res.body)).toEqual({ ok: true });
   });
 
-  it("injects the resolved secret into a query param when authInject.query is used", async () => {
-    let capturedUrl = "";
-    const fakeFetch: typeof fetch = async (input) => {
-      capturedUrl = input.toString();
+  it("#4: refuses to inject a secret into a query param (CWE-598) -- never fetches, never leaks", async () => {
+    let fetched = false;
+    const fakeFetch: typeof fetch = async () => {
+      fetched = true;
       return new Response("{}", { status: 200 });
     };
     const registry = new ProviderRegistry();
@@ -109,17 +109,17 @@ describe("LocalBroker.proxyCall", () => {
       log: (e) => logs.push(e),
     });
 
-    await broker.proxyCall({
-      providerId: "fake",
-      method: "GET",
-      url: "https://example.com/api/x",
-      authInject: { query: "access_token" },
-    });
+    await expect(
+      broker.proxyCall({
+        providerId: "fake",
+        method: "GET",
+        url: "https://example.com/api/x",
+        authInject: { query: "access_token" },
+      }),
+    ).rejects.toThrow(/query param/i);
 
-    expect(capturedUrl).toBe(`https://example.com/api/x?access_token=${SECRET}`);
-    // the AUDITED url must stay the pre-injection one -- a query-injected secret must never land in the log.
-    expect(logs[0]?.url).toBe("https://example.com/api/x");
-    expect(JSON.stringify(logs)).not.toContain(SECRET);
+    expect(fetched).toBe(false); // secret-in-query is refused before any request goes out...
+    expect(JSON.stringify(logs)).not.toContain(SECRET); // ...and the secret never appears anywhere
   });
 
   it("KEY INVARIANT: proxyCall's returned response never leaks the injected secret", async () => {

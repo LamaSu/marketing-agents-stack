@@ -84,11 +84,20 @@ export class GatecraftBroker implements CredentialBroker {
   async proxyCall(req: ProxyRequest): Promise<ProxyResponse> {
     const provider = this.#registry.get(req.providerId);
 
+    // #4 hardening: never ask gatecraft to place a secret in a URL query (CWE-598 -- leaks to
+    // logs/Referer/history); secrets go in headers only.
+    if (req.authInject?.query !== undefined) {
+      throw new Error(
+        "credentials: refusing to inject a secret into a query parameter -- secrets in URLs leak " +
+          "to logs/Referer/history (CWE-598). Use authInject.header instead.",
+      );
+    }
+
     // #4 (defense in depth): don't even ask gatecraft to inject a secret into an off-base URL.
     // This broker has no env access, so it validates the STATIC `baseUrl` only; per-org providers
-    // (`baseUrlEnv`, e.g. Salesforce) are validated by gatecraft server-side. Fires only when
-    // authInject requests injection.
-    const injectsSecret = req.authInject?.header !== undefined || req.authInject?.query !== undefined;
+    // (`baseUrlEnv`, e.g. Salesforce) are validated by gatecraft server-side. Fires only when a
+    // header authInject requests injection.
+    const injectsSecret = req.authInject?.header !== undefined;
     const staticBase = provider?.baseUrl;
     if (injectsSecret && staticBase !== undefined && !isUrlWithinBase(req.url, staticBase)) {
       throw new Error(

@@ -99,29 +99,33 @@ export class LocalBroker implements CredentialBroker {
   async proxyCall(req: ProxyRequest): Promise<ProxyResponse> {
     const provider = this.#registry.get(req.providerId);
 
-    // #4 DESTINATION BINDING: a resolved secret may only be injected into a call whose URL is
-    // within the provider's registered base. Enforced HERE, before the secret is read -- an
-    // off-base URL throws, so the secret is never loaded/injected/sent. Only fires when authInject
-    // actually requests injection; an unauthenticated proxy call is a plain fetch (no secret to leak).
-    const injectsSecret = req.authInject?.header !== undefined || req.authInject?.query !== undefined;
+    // #4 hardening: a live secret must NEVER ride in a URL query string (CWE-598 -- query strings
+    // leak to server/proxy access logs, Referer headers and browser history, and fall outside the
+    // DPoP binding). Secrets are injected via request HEADERS only; a query authInject is refused.
+    if (req.authInject?.query !== undefined) {
+      throw new Error(
+        "credentials: refusing to inject a secret into a query parameter -- secrets in URLs leak " +
+          "to logs/Referer/history (CWE-598). Use authInject.header instead.",
+      );
+    }
+
+    // #4 DESTINATION BINDING: a resolved secret may only be injected into a call whose URL is within
+    // the provider's registered base. Enforced HERE, before the secret is read -- an off-base URL
+    // throws, so the secret is never loaded/injected/sent. Fires only when a header authInject is
+    // present; an unauthenticated proxy call is a plain fetch (no secret to leak).
+    const injectsSecret = req.authInject?.header !== undefined;
     if (injectsSecret) this.#assertUrlWithinBase(provider, req.url);
 
     const keyName = provider?.keyNames[0];
     const secret = injectsSecret && keyName ? this.#readEnv(keyName) : undefined;
 
     const headers: Record<string, string> = { ...(req.headers ?? {}) };
-    // OPT-IN: bind this request to the agent key. `htu` (inside proof) strips the query, so a
-    // query-injected secret below can never enter the proof. Bound to req.url (pre-injection).
+    // OPT-IN: bind this request to the agent key. The secret goes in a header (never the query) and
+    // `htu` inside the proof strips any query, so the secret can never enter the proof.
     if (this.#dpopSigner) headers["DPoP"] = this.#dpopSigner.proof({ htm: req.method, htu: req.url });
-    let url = req.url;
+    const url = req.url;
     const headerName = req.authInject?.header;
-    const queryName = req.authInject?.query;
     if (secret && headerName) headers[headerName] = secret;
-    if (secret && queryName) {
-      const withQuery = new URL(url);
-      withQuery.searchParams.set(queryName, secret);
-      url = withQuery.toString();
-    }
 
     let body: string | undefined;
     if (typeof req.body === "string") {
@@ -139,8 +143,8 @@ export class LocalBroker implements CredentialBroker {
     });
     const resBody = await res.text();
 
-    // Log the ORIGINAL request url, never the (possibly query-injected) outbound one --
-    // a query-based authInject would otherwise leak the secret into the audit log.
+    // The secret is only ever a header (never the query), so req.url is safe to log; headers,
+    // which carry the secret, are never logged.
     this.#log({
       ts: nowIso(),
       action: "proxyCall",

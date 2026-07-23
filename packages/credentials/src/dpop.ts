@@ -12,9 +12,10 @@
  *    and only the PUBLIC JWK is embedded in the proof header. This does not weaken the package's
  *    "agent never sees the key" invariant -- the DPoP key is a *request-binding* identity, not
  *    a provider secret. Provider secrets are still resolved/injected only inside a broker.
- *  - `htu` is normalized to strip the query string (RFC 9449 §4.2), so even when `LocalBroker`
- *    query-injects a provider secret into the outbound URL, that secret can NEVER appear inside
- *    a DPoP proof. Binding is to scheme+host+path+method only.
+ *  - `htu` is normalized to strip the query string (RFC 9449 §4.2), so a DPoP proof binds to
+ *    scheme+host+path+method only -- query parameters never enter it. (LocalBroker additionally
+ *    refuses to inject a secret into the query at all; this stripping keeps any OTHER query data
+ *    out of the proof too.)
  *    CAVEAT (the flip side of that §4.2 rule): because `htu` EXCLUDES the query, the binding does
  *    not cover query parameters. A money-affecting parameter (amount, recipient, idempotency key)
  *    MUST NOT ride in the query string -- it would fall outside the proof and could be tampered

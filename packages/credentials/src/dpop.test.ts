@@ -263,20 +263,17 @@ describe("LocalBroker + DPoP (opt-in)", () => {
     expect(res.valid).toBe(true);
   });
 
-  it("the query-injected secret NEVER appears inside the DPoP proof (htu strips the query)", async () => {
+  it("refuses query-param secret injection (secrets go in headers; nothing reaches the wire)", async () => {
     const signer = createDpopSigner(generateDpopKeyPair("ES256"), { clock: fixedClock });
     const { broker, captured } = brokerWith(signer);
-    await broker.proxyCall({
-      providerId: "fake",
-      method: "GET",
-      url: "https://example.com/api/x",
-      authInject: { query: "access_token" }, // secret goes into the outbound URL
-    });
-    expect(captured.url).toContain(SECRET); // secret is on the wire URL...
-    const proof = captured.headers.DPoP as string;
-    expect(proof).not.toContain(SECRET); // ...but never inside the proof
-    // and the proof is still valid, bound to the clean (query-less) target
-    const res = verifyDpopProof(proof, { htm: "GET", htu: "https://example.com/api/x", now: FIXED_MS });
-    expect(res.valid).toBe(true);
+    await expect(
+      broker.proxyCall({
+        providerId: "fake",
+        method: "GET",
+        url: "https://example.com/api/x",
+        authInject: { query: "access_token" },
+      }),
+    ).rejects.toThrow(/query param/i);
+    expect(captured.url).toBe(""); // refused before fetch -- nothing captured
   });
 });

@@ -25,7 +25,11 @@ export interface CredentialBroker {
 export interface AuthInject {
   /** request header to set to the resolved secret, e.g. "Authorization" or "X-API-Key". */
   header?: string;
-  /** query param to set to the resolved secret, e.g. "access_token". */
+  /**
+   * @deprecated Refused at runtime (finding #4). A secret must never ride in a URL query string
+   * (CWE-598 -- it leaks to server/proxy access logs, Referer headers and browser history, and
+   * falls outside the DPoP binding). Use `header` instead; a broker throws on a query authInject.
+   */
   query?: string;
 }
 
