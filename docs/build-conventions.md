@@ -42,7 +42,7 @@ The dev tablet has ~700MB free and OOMs on installs of the native deps (duckdb, 
 
 ## The three mechanical guardrails (never violate)
 1. **Reviewer ≠ generator.** No type in `@mstack/reviewer` output carries generated marketing prose. `Finding.recommendedChange` is a short instruction, never a drafted paragraph.
-2. **Draft-first / human-approves-every-send.** No adapter or channel exposes a direct-send method. The ONLY path from `Draft` to `dispatched` is `runtime/dispatch.ts`, which refuses any draft lacking a matching `approved` `Approval` row.
+2. **Draft-first / human-approves-every-send.** No adapter or channel exposes a direct-send method. `runtime/dispatch.ts#dispatchDraft` is the only path from `Draft` to `dispatched` **in the normal flow** — grep-guarded by a test asserting exactly one channel call site — and it refuses any draft lacking a matching **approved**, hash-chained `Approval` row (which also binds the approved draft's content, via a win-once atomic claim). It is a strong default, not a mechanical guarantee against in-process code holding a `MemoryRepo` handle or the raw `query()` escape hatch. Honest threat model + residuals: `docs/SECURITY.md`.
 3. **Compounding memory.** Every workflow writes to `@mstack/memory` ≥ twice (raw in, decision/outcome out). Nothing is ephemeral.
 
 ## Prompt hygiene for product agents

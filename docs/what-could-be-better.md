@@ -41,9 +41,11 @@ during the build and the demo run. Ordered by leverage, not by ease.
 
 6. **DuckDB single-writer caps concurrency.** It's why the two web apps can't both write to `./.data`
    simultaneously, and why there's no multi-user story. The Postgres swap is designed behind the
-   `memory` interface but not implemented. **Next:** the `pg`-backed `MemoryRepo` + the atomic
-   `UPDATE ... WHERE status='approved'` dispatch guard (closes the concurrent double-send residual
-   Sol flagged — currently only the *sequential* case is closed).
+   `memory` interface but not implemented. **Update — now done (Sol audit rounds 1–2):** the atomic
+   `UPDATE ... WHERE status='approved' RETURNING id` claim-before-send IS implemented
+   (`claimDraftForDispatch`), closing BOTH the concurrent race and the retry double-send via an
+   `approved → dispatching → dispatched|approved` state machine. **Still next:** the `pg`-backed
+   `MemoryRepo` for genuine multi-writer concurrency. Full security posture: `docs/SECURITY.md`.
 
 7. **Real connectors are thin.** PostHog/GitHub/Segment/Wikidata/GLEIF/EDGAR adapters exist but only
    the `sample` providers are exercised; real pagination/auth/rate-limits/error-handling are untested
