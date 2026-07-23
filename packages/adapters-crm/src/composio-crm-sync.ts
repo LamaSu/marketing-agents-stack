@@ -90,30 +90,32 @@ export interface ComposioLike {
 
 /* ─────────────────────────── per-push-type action config ─────────────────────────── */
 
-/**
- * Shared shape of one action config: the slug, its arg-mapper, and the
- * (default-off) escape hatch from the CRM-record-only allowlist below.
- */
-interface ActionConfig<T> {
-  action: string;
-  mapArgs: (arg: T) => Record<string, unknown>;
-  /** Explicit, per-action opt-out of the default CRM-record allowlist. Only
-   *  set this if `action` is a genuine CRM record operation the default
-   *  allowlist doesn't recognize (see `assertCrmActionAllowed`'s error
-   *  message for the recognized verb/noun sets) — NEVER for a send/message
-   *  action, which must go through `OutreachChannel` + `Approval` instead.
-   *  Setting this takes the action OFF this seam's enforced safety boundary;
-   *  the deployer is entirely responsible for what it actually does. */
-  dangerouslyAllowAnyAction?: boolean;
-}
-
+/** Explicit, per-action opt-out of the default CRM-record allowlist below.
+ *  Only set this if `action` is a genuine CRM record operation the default
+ *  allowlist doesn't recognize (see `assertCrmActionAllowed`'s error message
+ *  for the recognized verb/noun sets) — NEVER for a send/message action,
+ *  which must go through `OutreachChannel` + `Approval` instead. Setting
+ *  this takes the action OFF this seam's enforced safety boundary; the
+ *  deployer is entirely responsible for what it actually does. */
 export interface ComposioCrmSyncActions {
   /** Composio action slug + arg-mapper for a score push. Omit to no-op that method. */
-  score?: ActionConfig<Account>;
+  score?: {
+    action: string;
+    mapArgs: (account: Account) => Record<string, unknown>;
+    dangerouslyAllowAnyAction?: boolean;
+  };
   /** Composio action slug + arg-mapper for a decision push. Omit to no-op that method. */
-  decision?: ActionConfig<Decision>;
+  decision?: {
+    action: string;
+    mapArgs: (decision: Decision) => Record<string, unknown>;
+    dangerouslyAllowAnyAction?: boolean;
+  };
   /** Composio action slug + arg-mapper for an outcome push. Omit to no-op that method. */
-  outcome?: ActionConfig<Outcome>;
+  outcome?: {
+    action: string;
+    mapArgs: (outcome: Outcome) => Record<string, unknown>;
+    dangerouslyAllowAnyAction?: boolean;
+  };
 }
 
 /* ─────────── CRM-record-only action allowlist (audit finding #3) ─────────── */
@@ -168,7 +170,7 @@ function assertCrmActionAllowed(
     tokens.some((t) => SAFE_ACTION_VERBS.has(t)) &&
     tokens.some((t) => CRM_RECORD_NOUNS.has(t));
   if (isDefaultAllowed) return;
-  if (cfg.dangerouslyAllowAnyAction) return; // explicit, documented opt-out -- see ActionConfig's doc comment
+  if (cfg.dangerouslyAllowAnyAction) return; // explicit, documented opt-out -- see ComposioCrmSyncActions' doc comment
   throw new Error(
     `[@mstack/adapters-crm] composioCrmSync: refusing to configure the "${pushType}" push with Composio action ` +
       `"${cfg.action}" — this seam pushes OUR derived score/decision/outcome onto OUR OWN CRM record and must ` +
