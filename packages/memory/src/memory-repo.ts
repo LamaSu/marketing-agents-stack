@@ -443,6 +443,40 @@ export class MemoryRepo {
     await this.putDraft({ ...existing, status });
   }
 
+  /**
+   * ATOMIC conditional claim for the one send path (`@mstack/runtime`'s guardrail #2).
+   * Flips a draft `approved -> dispatched` in a SINGLE statement guarded on the CURRENT
+   * persisted status, and reports whether THIS call is the one that changed the row — so
+   * two concurrent dispatchers cannot both proceed to send. DuckDB serializes statements
+   * on the single connection, so only the first UPDATE sees `status='approved'`; the
+   * loser's `WHERE ... AND status='approved'` matches nothing and it gets `false`.
+   *
+   * Returns true iff this call won the claim (moved the row approved->dispatched). Updates
+   * BOTH the indexed `status` column and the `status` inside the JSON `data` blob, so
+   * `getDraft` (reads `data`) and column queries stay consistent. Unlike `setDraftStatus`
+   * this is CONDITIONAL (only from `approved`) and reports the outcome — that is what makes
+   * it safe as the pre-send gate.
+   *
+   * Fail-closed by design: a crash/throw AFTER a won claim leaves the draft `dispatched`,
+   * so an ordinary retry is refused (returns false) rather than risking a second external
+   * send. Relies on `UPDATE ... RETURNING` (DuckDB >= 0.8) to count the changed row —
+   * verified on the Spark build per docs/build-conventions.md.
+   */
+  async claimDraftForDispatch(id: string): Promise<boolean> {
+    const existing = await this.getDraft(id);
+    if (!existing || existing.status !== "approved") {
+      return false;
+    }
+    const dispatched: Draft = { ...existing, status: "dispatched" };
+    const changed = await this.query<{ id: string }>(
+      `UPDATE drafts SET status = 'dispatched', data = $data
+         WHERE id = $id AND status = 'approved'
+         RETURNING id`,
+      { id, data: JSON.stringify(dispatched) },
+    );
+    return changed.length > 0;
+  }
+
   /* ── Outcome ── */
 
   async putOutcome(outcome: Outcome): Promise<void> {

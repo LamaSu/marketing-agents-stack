@@ -164,6 +164,34 @@ describe("MemoryRepo — DuckDB-backed compounding warehouse", () => {
     await expect(repo.setDraftStatus("no-such-draft", "approved")).rejects.toThrow();
   });
 
+  it("claimDraftForDispatch atomically claims approved->dispatched exactly once (#7)", async () => {
+    const draft = Draft.parse({
+      id: "dr_claim",
+      kind: "outreach_email",
+      refId: "acc_1",
+      body: "hi",
+      createdBy: "copywriter",
+      createdAt: now,
+    });
+    await repo.putDraft(draft);
+    await repo.setDraftStatus("dr_claim", "approved");
+
+    // first claim wins and flips BOTH the column and the JSON data to 'dispatched'.
+    expect(await repo.claimDraftForDispatch("dr_claim")).toBe(true);
+    expect((await repo.getDraft("dr_claim"))?.status).toBe("dispatched");
+
+    // second claim loses — the row is no longer 'approved' (this is what makes concurrent
+    // dispatchers safe: exactly one UPDATE can move approved->dispatched).
+    expect(await repo.claimDraftForDispatch("dr_claim")).toBe(false);
+
+    // a draft that isn't 'approved' cannot be claimed; nor can a missing one.
+    await repo.putDraft(
+      Draft.parse({ id: "dr_pending", kind: "outreach_email", refId: "acc_1", body: "hi", createdBy: "c", createdAt: now }),
+    );
+    expect(await repo.claimDraftForDispatch("dr_pending")).toBe(false);
+    expect(await repo.claimDraftForDispatch("no-such-draft")).toBe(false);
+  });
+
   it("round-trips an Outcome", async () => {
     const outcome = Outcome.parse({ id: "o1", refType: "draft", refId: "dr1", result: "sent", ts: now });
     await repo.putOutcome(outcome);

@@ -266,6 +266,43 @@ describe("dispatchDraft — guardrail #2: THE ONLY send path", () => {
       await rm(cbindDir, { recursive: true, force: true });
     }
   });
+
+  it("HARDENING (#7): the atomic claim runs BEFORE the send, so a channel failure can't be retried into a double-send", async () => {
+    const draft = pendingDraft({ status: "approved" });
+    await memory.putDraft(draft);
+    const approval = await memory.appendApproval({
+      id: "appr_retry",
+      draftId: draft.id,
+      decision: "approve",
+      actor: "human",
+      ts: now,
+    });
+
+    let sends = 0;
+    const flakyChannel: OutreachChannel = {
+      name: "flaky",
+      kind: "email",
+      dispatch: async () => {
+        sends++;
+        throw new Error("transient channel failure after send");
+      },
+    };
+
+    // first attempt: the claim wins, the channel IS called (sends -> 1) but throws.
+    await expect(dispatchDraft(draft, approval, flakyChannel, memory)).rejects.toThrow(
+      /transient channel failure/,
+    );
+    expect(sends).toBe(1);
+    // the draft is already claimed 'dispatched' (fail-closed: claim precedes the send).
+    expect((await memory.getDraft(draft.id))?.status).toBe("dispatched");
+
+    // an ordinary retry with the SAME (already-claimed) draft refuses WITHOUT calling the
+    // channel again — no second send, no duplicate outbox record.
+    await expect(dispatchDraft(draft, approval, flakyChannel, memory)).rejects.toThrow(
+      /already dispatched/,
+    );
+    expect(sends).toBe(1); // still 1 — the retry did not re-send
+  });
 });
 
 describe("assertApproved", () => {

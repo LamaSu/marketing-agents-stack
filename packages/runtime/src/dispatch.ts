@@ -117,21 +117,19 @@ export function assertApproved(
  *      caller-supplied `approval`'s own fields — a caller cannot pass off a real approval id for
  *      a *different* draft/decision by lying about the fields on its local copy.
  *
- * RESIDUAL, DOCUMENTED (not fixed here — see rationale): this closes the realistic SEQUENTIAL
- * double-send (dispatch, then dispatch again) because the second call re-reads status and sees
- * `"dispatched"`. It does NOT close a true RACE of two concurrent `dispatchDraft` calls for the
- * SAME draft that both read the persisted status as `"approved"` before either has written
- * `"dispatched"` (classic check-then-act TOCTOU). Fully closing that would need an atomic
- * conditional update — e.g. `UPDATE drafts SET status='dispatched' WHERE id=$id AND
- * status='approved'`, checking the affected-row count BEFORE the channel call — which
- * `MemoryRepo#setDraftStatus` does not provide today (it is unconditional). Under this package's
- * actual deployment model — single-writer embedded DuckDB (see the file-header note in
- * `memory-repo.ts`) plus a runtime that serializes calls through one shared `MemoryRepo` instance
- * per process — genuinely concurrent writers are already out of scope, so the practical risk is
- * the sequential case, which this closes. If/when the backing store moves to Postgres under
- * concurrent writers (the documented swap-out path in `memory-repo.ts`), add the atomic
- * conditional update at that time rather than over-engineering it into today's single-writer
- * path.
+ * DOUBLE-SEND — closed by the read-side gate here PLUS the write-side atomic claim downstream:
+ * this function closes the SEQUENTIAL case (the second call re-reads status, sees `"dispatched"`,
+ * and is refused). The true concurrent RACE (two `dispatchDraft` calls both reading `"approved"`
+ * before either writes `"dispatched"` — classic check-then-act TOCTOU) and the retry-after-crash
+ * case are closed one step downstream by `dispatchDraft`'s ATOMIC claim:
+ * `MemoryRepo#claimDraftForDispatch` runs a single `UPDATE drafts SET status='dispatched' WHERE
+ * id=$id AND status='approved' RETURNING id` immediately BEFORE the channel call and proceeds only
+ * if it changed the row, so at most one caller can ever win. `assertDispatchable` stays the
+ * READ-side gate (existence, persisted status, a real hash-chained approval, the content binding);
+ * the claim is the WRITE-side gate. Both are needed — this check refuses forged/mismatched/tampered
+ * inputs before any write; the claim serializes the one legitimate send. This holds under the
+ * package's single-writer embedded-DuckDB model and remains correct if the backing store later
+ * moves to Postgres (the conditional UPDATE is the same atomic primitive there).
  */
 export async function assertDispatchable(
   memory: MemoryRepo,
@@ -215,8 +213,25 @@ export async function dispatchDraft(
 ): Promise<Outcome> {
   const persisted = await assertDispatchable(memory, draft, approval);
 
+  // ATOMIC claim BEFORE the external send (guardrail #2, double-send race): flip
+  // approved->dispatched conditionally and proceed only if THIS call won the claim. This
+  // closes the concurrent race (two callers each read 'approved' in assertDispatchable and
+  // both send) AND the retry double-send (a crash after the send leaves the draft already
+  // claimed, so an ordinary retry is refused here instead of re-sending). Fail-closed: the
+  // status is committed before the send, so the failure mode is "marked sent but perhaps
+  // not delivered" (safe, human-visible) rather than a silent duplicate send.
+  const claimed = await memory.claimDraftForDispatch(persisted.id);
+  if (!claimed) {
+    throw new Error(
+      `dispatchDraft: refused — draft "${persisted.id}" could not be claimed for dispatch ` +
+        "(already claimed or dispatched by a concurrent or earlier call); refusing to send again",
+    );
+  }
+
+  // Send using the PRE-claim `persisted` object (still status 'approved') so a channel's
+  // defensive assertApproved re-check passes; re-reading here would see 'dispatched' and be
+  // wrongly rejected. The claim above already persisted status='dispatched'.
   const channelOutcome = await channel.dispatch(persisted, approval);
-  await memory.setDraftStatus(persisted.id, "dispatched");
 
   const now = opts.now ?? nowIso;
   const outcome = Outcome.parse({
