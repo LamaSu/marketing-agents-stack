@@ -14,26 +14,53 @@ import {
 const SECRET = "shh-do-not-log-me-9f2c";
 
 describe("LocalBroker.resolve", () => {
-  it("resolves a fake env key", async () => {
-    const broker = new LocalBroker({ env: { FAKE_API_KEY: SECRET }, log: () => {} });
+  it("resolves a registered provider's own key", async () => {
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"] });
+    const broker = new LocalBroker({ registry, env: { FAKE_API_KEY: SECRET }, log: () => {} });
     expect(await broker.resolve("fake", "FAKE_API_KEY")).toBe(SECRET);
   });
 
-  it("returns undefined for a missing key, still logged with found:false", async () => {
+  it("returns undefined for a REGISTERED key whose env value is absent, logged found:false", async () => {
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "fake", keyNames: ["MISSING_KEY"] });
     const logs: BrokerLogEntry[] = [];
-    const broker = new LocalBroker({ env: {}, log: (e) => logs.push(e) });
+    const broker = new LocalBroker({ registry, env: {}, log: (e) => logs.push(e) });
     const value = await broker.resolve("fake", "MISSING_KEY");
     expect(value).toBeUndefined();
     expect(logs[0]).toMatchObject({ action: "resolve", providerId: "fake", keyName: "MISSING_KEY", found: false });
   });
 
   it("logs a redacted line -- no secret substring anywhere in the log", async () => {
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"] });
     const logs: BrokerLogEntry[] = [];
-    const broker = new LocalBroker({ env: { FAKE_API_KEY: SECRET }, log: (e) => logs.push(e) });
+    const broker = new LocalBroker({ registry, env: { FAKE_API_KEY: SECRET }, log: (e) => logs.push(e) });
     await broker.resolve("fake", "FAKE_API_KEY");
     expect(logs).toHaveLength(1);
     expect(logs[0]).toMatchObject({ action: "resolve", providerId: "fake", keyName: "FAKE_API_KEY", found: true });
     expect(JSON.stringify(logs)).not.toContain(SECRET);
+  });
+
+  it("#10: refuses resolve() for a keyName not registered to the providerId (no arbitrary env reads)", async () => {
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "posthog", keyNames: ["POSTHOG_API_KEY"] });
+    const logs: BrokerLogEntry[] = [];
+    const broker = new LocalBroker({
+      registry,
+      env: { POSTHOG_API_KEY: "ph-key", DATABASE_URL: "postgres://u:pw@h/db", AWS_SECRET_ACCESS_KEY: "aws-shh" },
+      log: (e) => logs.push(e),
+    });
+    // a key that exists in env but belongs to no provider is refused (the exfil the audit found):
+    await expect(broker.resolve("posthog", "DATABASE_URL")).rejects.toThrow(/not a registered key/i);
+    await expect(broker.resolve("posthog", "AWS_SECRET_ACCESS_KEY")).rejects.toThrow(/not a registered key/i);
+    // an UNregistered provider is refused too (cannot be used to read any env):
+    await expect(broker.resolve("nope", "POSTHOG_API_KEY")).rejects.toThrow(/not a registered key/i);
+    // the provider's OWN key still resolves:
+    expect(await broker.resolve("posthog", "POSTHOG_API_KEY")).toBe("ph-key");
+    // and no unrelated secret ever appears in a log line (even the refused attempts log found:false only):
+    expect(JSON.stringify(logs)).not.toContain("postgres://u:pw@h/db");
+    expect(JSON.stringify(logs)).not.toContain("aws-shh");
   });
 });
 

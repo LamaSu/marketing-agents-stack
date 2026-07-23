@@ -80,6 +80,17 @@ export class LocalBroker implements CredentialBroker {
   }
 
   async resolve(providerId: string, keyName: string): Promise<string | undefined> {
+    // #10: bind keyName to the provider. resolve() is a trusted diagnostic path, but it must NOT
+    // be usable to read an arbitrary env var -- resolve("posthog","DATABASE_URL") is refused so a
+    // provider can never be steered to return an unrelated secret. Unregistered provider -> refused.
+    const provider = this.#registry.get(providerId);
+    if (!provider?.keyNames.includes(keyName)) {
+      this.#log({ ts: nowIso(), action: "resolve", providerId, keyName, found: false });
+      throw new Error(
+        `credentials: resolve("${providerId}", "${keyName}") refused -- "${keyName}" is not a ` +
+          `registered key for provider "${providerId}". resolve only reads keys the provider owns.`,
+      );
+    }
     const value = this.#readEnv(keyName);
     this.#log({ ts: nowIso(), action: "resolve", providerId, keyName, found: value !== undefined });
     return value;

@@ -64,6 +64,17 @@ export class GatecraftBroker implements CredentialBroker {
    * gatecraft owns the actual secret store; this process never persists what comes back.
    */
   async resolve(providerId: string, keyName: string): Promise<string | undefined> {
+    // #10: bind keyName to the provider BEFORE asking gatecraft -- don't relay a request for an
+    // arbitrary/unrelated key. gatecraft owns the secret store; this keeps the CLIENT from ever
+    // requesting a key the provider doesn't own.
+    const provider = this.#registry.get(providerId);
+    if (!provider?.keyNames.includes(keyName)) {
+      this.#log({ ts: nowIso(), action: "resolve", providerId, keyName, found: false });
+      throw new Error(
+        `credentials: resolve("${providerId}", "${keyName}") refused -- "${keyName}" is not a ` +
+          `registered key for provider "${providerId}".`,
+      );
+    }
     const result = await this.#gcInvoke("gc_acquire_credential", { providerId, keyName });
     const value = isRecord(result) && typeof result.value === "string" ? result.value : undefined;
     this.#log({ ts: nowIso(), action: "resolve", providerId, keyName, found: value !== undefined });
