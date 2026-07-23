@@ -19,6 +19,10 @@ Production* webinar (Tokens of Growth) as open source:
 > closed SaaS point-solutions. There is no open, composable "signal → decision → action"
 > runtime you point at *your own* data and models. **This is that.**
 
+**→ New here? Start with [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** — install, a
+five-minute tour (`seed → demo → approve → outbox`), the three surfaces, and the
+[walkthrough videos](videos/). It runs offline, with no API key.
+
 ## The loop
 
 ```
