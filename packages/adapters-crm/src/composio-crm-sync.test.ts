@@ -208,6 +208,93 @@ describe("ComposioCrmSync — CRM-record-only action allowlist (audit finding #3
   });
 });
 
+describe("ComposioCrmSync — round-2 hardening: false-negative + false-positive fix (cross-model re-audit, sol/GPT-5.6)", () => {
+  it("refuses GMAIL_SENDEMAIL_CONTACT_UPDATE — a fused SEND+EMAIL verb the exact-token blocklist previously missed (false negative)", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { score: { action: "GMAIL_SENDEMAIL_CONTACT_UPDATE", mapArgs: () => ({}) } },
+        }),
+    ).toThrow(/send\/message\/notify/i);
+  });
+
+  it("allows HUBSPOT_UPDATE_CONTACT_EMAIL — a benign record update touching the contact's email FIELD (false positive fixed)", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { score: { action: "HUBSPOT_UPDATE_CONTACT_EMAIL", mapArgs: () => ({}) } },
+        }),
+    ).not.toThrow();
+  });
+
+  it("refuses EMAIL used as the action's own verb (no literal SEND token, no safe verb elsewhere)", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { score: { action: "OUTLOOK_EMAIL_CONTACT", mapArgs: () => ({}) } },
+        }),
+    ).toThrow(/send\/message\/notify/i);
+  });
+
+  it("catches any send-intent word fused into a bigger token, not just SENDEMAIL (e.g. POSTMESSAGE)", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { decision: { action: "SLACK_POSTMESSAGE_CHANNEL", mapArgs: () => ({}) } },
+        }),
+    ).toThrow(/send\/message\/notify/i);
+  });
+
+  it("dangerouslyAllowAnyAction cannot override a clear send-intent action — hard refuse regardless", () => {
+    const { client } = fakeComposio();
+    const build = () =>
+      new ComposioCrmSync(client, {
+        actions: {
+          score: {
+            action: "GMAIL_SEND_EMAIL",
+            mapArgs: () => ({}),
+            dangerouslyAllowAnyAction: true,
+          },
+        },
+      });
+    expect(build).toThrow(/send\/message\/notify/i);
+    expect(build).toThrow(/dangerouslyAllowAnyAction/);
+  });
+
+  it("dangerouslyAllowAnyAction still works for a genuine non-standard RECORD op that is not a send", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: {
+            score: {
+              action: "PIPEDRIVE_MERGE_ORGANIZATION",
+              mapArgs: () => ({}),
+              dangerouslyAllowAnyAction: true,
+            },
+          },
+        }),
+    ).not.toThrow();
+  });
+
+  it("previously-tested cases still hold: exact send actions and exact record-update actions are unaffected", () => {
+    const { client } = fakeComposio();
+    expect(
+      () => new ComposioCrmSync(client, { actions: { score: { action: "GMAIL_SEND_EMAIL", mapArgs: () => ({}) } } }),
+    ).toThrow(/refusing to configure/i);
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { score: { action: "HUBSPOT_UPDATE_CONTACT", mapArgs: () => ({}) } },
+        }),
+    ).not.toThrow();
+  });
+});
+
 describe("ComposioCrmSync — strips extra runtime fields before mapArgs sees them (audit finding #11)", () => {
   it("pushDecision never exposes fields beyond the real Decision schema to mapArgs, even if smuggled on via `as`", async () => {
     const { client, execute } = fakeComposio();

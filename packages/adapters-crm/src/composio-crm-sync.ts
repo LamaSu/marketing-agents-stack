@@ -48,6 +48,27 @@
  * degrade-on-failure try/catch (that catch is for genuine runtime/Composio
  * failures; a disallowed action is a wiring mistake and must fail loud).
  *
+ * ROUND-2 HARDENING (cross-model re-audit, sol/GPT-5.6) — the original
+ * finding #3 fix tokenized the action slug on `_`/non-alnum and blocked EXACT
+ * tokens (`SEND`/`EMAIL`/`MESSAGE`/…), which had two failure modes: (a) a
+ * FALSE NEGATIVE — `GMAIL_SENDEMAIL_CONTACT_UPDATE` tokenizes to a fused
+ * `SENDEMAIL` token that never exactly equals `"SEND"` or `"EMAIL"`, so it
+ * slipped through with an allowed verb+noun (`UPDATE`/`CONTACT`) elsewhere in
+ * the slug; and (b) a FALSE POSITIVE — `HUBSPOT_UPDATE_CONTACT_EMAIL` (a
+ * benign record update touching the contact's email FIELD) was rejected
+ * because it happened to contain an exact `EMAIL` token — pushing deployers
+ * toward `dangerouslyAllowAnyAction`, which reopens the hole. The classifier
+ * is now ALLOWLIST-FIRST and substring-aware: `hasSendIntentSubstring`
+ * matches send-intent words as SUBSTRINGS of the whole slug (catching
+ * fusions like `SENDEMAIL`), while `"EMAIL"` itself is excluded from that
+ * blanket substring check and instead resolved positionally by
+ * `isEmailUsedAsVerb` — a trailing "EMAIL" left over after a safe verb +
+ * record noun already match is a field reference (benign); an "EMAIL" that
+ * is itself the only verb-like signal in the slug is refused.
+ * `dangerouslyAllowAnyAction` remains an opt-out for a non-standard RECORD op
+ * the allowlist doesn't recognize, but can NEVER override a clear
+ * send-intent match — see `assertCrmActionAllowed`.
+ *
  * FINDING #11 (extra-field leak) ALSO CLOSED HERE: `runAction` now parses
  * the incoming `Account`/`Decision`/`Outcome` through its zod schema before
  * `mapArgs` ever sees it, stripping any extra runtime fields smuggled in via
@@ -93,10 +114,16 @@ export interface ComposioLike {
 /** Explicit, per-action opt-out of the default CRM-record allowlist below.
  *  Only set this if `action` is a genuine CRM record operation the default
  *  allowlist doesn't recognize (see `assertCrmActionAllowed`'s error message
- *  for the recognized verb/noun sets) — NEVER for a send/message action,
- *  which must go through `OutreachChannel` + `Approval` instead. Setting
- *  this takes the action OFF this seam's enforced safety boundary; the
- *  deployer is entirely responsible for what it actually does. */
+ *  for the recognized verb/noun sets) — NEVER for a send/message action.
+ *  IMPORTANT (round-2 hardening): this flag is NOT a universal override —
+ *  `assertCrmActionAllowed` still HARD-REFUSES any action carrying a clear
+ *  send-intent signal (a `SEND`/`MESSAGE`/`SMS`/… substring anywhere in the
+ *  slug, or `"EMAIL"` used as the action's own verb rather than a trailing
+ *  record field) even when this is `true`. It only lifts the boundary for a
+ *  non-standard CRM RECORD operation the allowlist doesn't recognize yet. A
+ *  real send must go through `OutreachChannel` + `Approval` instead; the
+ *  deployer is entirely responsible for what a permitted non-default action
+ *  actually does. */
 export interface ComposioCrmSyncActions {
   /** Composio action slug + arg-mapper for a score push. Omit to no-op that method. */
   score?: {
@@ -123,7 +150,7 @@ export interface ComposioCrmSyncActions {
 /** Verbs that, combined with a record noun below, describe a safe "push our
  *  derived data onto a record" operation — the only thing this seam exists
  *  to do. Matched as whole `_`-delimited tokens of the action slug. */
-const SAFE_ACTION_VERBS = new Set(["UPDATE", "UPSERT", "CREATE", "LOG", "SET", "ADD"]);
+const SAFE_ACTION_VERBS = new Set(["UPDATE", "UPSERT", "CREATE", "PATCH", "LOG", "SET", "ADD"]);
 
 /** Nouns that anchor a safe verb to "a CRM record", as opposed to a human
  *  channel/inbox. Requiring BOTH a safe verb AND a record noun is what lets
@@ -136,19 +163,69 @@ const CRM_RECORD_NOUNS = new Set([
   "OBJECT", "CUSTOMER",
 ]);
 
-/** Tokens that mark a slug as a send/message/notify-style action — content
- *  reaching a human. ALWAYS refused, regardless of any safe verb/noun also
- *  present (e.g. a hypothetical `SEND_EMAIL_TO_CONTACT` is still refused) —
- *  these must go through `OutreachChannel` + `Approval`, never this seam. */
-const SEND_STYLE_ACTION_TOKENS = new Set([
-  "SEND", "EMAIL", "MESSAGE", "SMS", "MMS", "NOTIFY", "NOTIFICATION", "POST",
-  "PUBLISH", "INVITE", "SHARE", "REPLY", "DM", "CHAT", "CALL", "WEBHOOK",
-  "BROADCAST", "CAMPAIGN", "PUSH", "TEXT",
-]);
+/**
+ * Send-intent SUBSTRINGS (deliberately NOT exact tokens) checked against the
+ * action slug with its `_`/non-alnum delimiters stripped entirely. This is
+ * what closes the ROUND-2 false negative: `GMAIL_SENDEMAIL_CONTACT_UPDATE`
+ * tokenizes to a single fused `SENDEMAIL` token that never exactly equals
+ * `"SEND"` — an exact-token blocklist (the original finding #3 fix) misses it
+ * entirely, and it also carries an allowed verb (`UPDATE`) + noun (`CONTACT`)
+ * elsewhere in the slug, so it would otherwise pass. Substring-matching the
+ * concatenated slug catches `SENDEMAIL`, a `POST`+`MESSAGE` fusion, or any
+ * other compound that fuses a send-intent word into a bigger token.
+ *
+ * DELIBERATELY EXCLUDES `"EMAIL"`: unlike every other entry here, "email" is
+ * routinely a legitimate CRM *field* name (`HUBSPOT_UPDATE_CONTACT_EMAIL`
+ * updates the contact's email field — a benign record update the round-2
+ * re-audit found was wrongly rejected by the original exact-token check). A
+ * blanket substring match on `"EMAIL"` would re-create that false positive.
+ * Whether `"EMAIL"` is a send ACTION (dangerous) vs a record FIELD (benign)
+ * is resolved separately, and positionally, by `isEmailUsedAsVerb` below.
+ */
+const SEND_INTENT_SUBSTRINGS = [
+  "SEND", "MESSAGE", "SMS", "MMS", "DISPATCH", "NOTIFY", "NOTIFICATION",
+  "WEBHOOK", "CALL", "BROADCAST", "CAMPAIGN", "PUSH", "TEXT", "POST",
+  "PUBLISH", "INVITE", "SHARE", "REPLY", "DM", "CHAT",
+];
 
-/** Split a Composio action slug into uppercase `_`/non-alnum-delimited tokens. */
+/** Split a Composio action slug into uppercase `_`/non-alnum-delimited tokens.
+ *  Used for the EXACT verb/noun/field matches below. */
 function actionTokens(action: string): string[] {
   return action.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+}
+
+/** Collapse the slug to one uppercase alphanumeric run with delimiters
+ *  stripped entirely, e.g. `"GMAIL_SENDEMAIL_CONTACT_UPDATE"` ->
+ *  `"GMAILSENDEMAILCONTACTUPDATE"`. Used ONLY for the substring/concatenation
+ *  check below — the exact-token verb/noun checks always use `actionTokens`. */
+function concatenatedSlug(action: string): string {
+  return action.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/** True if any send-intent substring (see `SEND_INTENT_SUBSTRINGS`'s doc
+ *  comment — bare `"EMAIL"` is deliberately excluded) appears ANYWHERE in the
+ *  slug, including fused inside a bigger token like `"SENDEMAIL"`. */
+function hasSendIntentSubstring(action: string): boolean {
+  const concat = concatenatedSlug(action);
+  return SEND_INTENT_SUBSTRINGS.some((s) => concat.includes(s));
+}
+
+/**
+ * True when `"EMAIL"` is functioning as the action's own send VERB (e.g. a
+ * hypothetical "email the contact" action with no other send-intent
+ * substring) rather than as a trailing FIELD qualifier on an already-safe
+ * record verb (e.g. `HUBSPOT_UPDATE_CONTACT_EMAIL` — "update the contact's
+ * email field"). The distinguishing signal: once the slug ALREADY reads as a
+ * safe record verb + record noun WITHOUT needing the `"EMAIL"` token at all,
+ * `"EMAIL"` is left over as a benign field reference; otherwise it is the
+ * only thing giving the slug a verb-like shape, so it's read as the action
+ * itself and refused.
+ */
+function isEmailUsedAsVerb(tokens: string[]): boolean {
+  if (!tokens.includes("EMAIL")) return false;
+  const hasSafeVerbElsewhere = tokens.some((t) => SAFE_ACTION_VERBS.has(t));
+  const hasRecordNoun = tokens.some((t) => CRM_RECORD_NOUNS.has(t));
+  return !(hasSafeVerbElsewhere && hasRecordNoun);
 }
 
 /**
@@ -157,6 +234,13 @@ function actionTokens(action: string): string[] {
  * OUTSIDE `runAction`'s try/catch, because a disallowed action is a
  * configuration error, not a transient runtime failure, and must fail loud
  * rather than silently degrade to a no-op like a real Composio outage would.
+ *
+ * ALLOWLIST-FIRST (round-2 hardening): an action is allowed ONLY when it has
+ * a safe verb AND a record noun AND carries no send-intent signal anywhere
+ * (`hasSendIntentSubstring` / `isEmailUsedAsVerb`). `dangerouslyAllowAnyAction`
+ * can lift the boundary for a non-standard RECORD op the allowlist doesn't
+ * recognize, but it can NEVER lift a clear send-intent signal — that check
+ * runs and throws before the opt-out is even consulted.
  */
 function assertCrmActionAllowed(
   pushType: "score" | "decision" | "outcome",
@@ -164,25 +248,39 @@ function assertCrmActionAllowed(
 ): void {
   if (!cfg) return; // not configured for this push type -- nothing to check
   const tokens = actionTokens(cfg.action);
-  const isSendStyle = tokens.some((t) => SEND_STYLE_ACTION_TOKENS.has(t));
+  const isSendStyle = hasSendIntentSubstring(cfg.action) || isEmailUsedAsVerb(tokens);
   const isDefaultAllowed =
     !isSendStyle &&
     tokens.some((t) => SAFE_ACTION_VERBS.has(t)) &&
     tokens.some((t) => CRM_RECORD_NOUNS.has(t));
   if (isDefaultAllowed) return;
+
+  // HARD REFUSE — checked BEFORE dangerouslyAllowAnyAction, on purpose: that
+  // flag exists only to admit a non-standard RECORD op the allowlist doesn't
+  // recognize, never to enable a send (see ComposioCrmSyncActions' doc
+  // comment). A clear send-intent signal cannot be opted out of.
+  if (isSendStyle) {
+    throw new Error(
+      `[@mstack/adapters-crm] composioCrmSync: refusing to configure the "${pushType}" push with Composio action ` +
+        `"${cfg.action}" — this looks like a send/message/notify action. This CANNOT be overridden with ` +
+        `\`dangerouslyAllowAnyAction\` — that opt-out lifts the boundary only for a non-standard CRM RECORD ` +
+        `operation, never for enabling a send. Sends must go through OutreachChannel + Approval ` +
+        `(docs/build-conventions.md guardrail #2), never this seam.`,
+    );
+  }
+
   if (cfg.dangerouslyAllowAnyAction) return; // explicit, documented opt-out -- see ComposioCrmSyncActions' doc comment
+
   throw new Error(
     `[@mstack/adapters-crm] composioCrmSync: refusing to configure the "${pushType}" push with Composio action ` +
       `"${cfg.action}" — this seam pushes OUR derived score/decision/outcome onto OUR OWN CRM record and must ` +
       `stay restricted to CRM record update/upsert/create/log operations (default allowlist: a verb from ` +
-      `[${[...SAFE_ACTION_VERBS].join(", ")}] combined with a noun from [${[...CRM_RECORD_NOUNS].join(", ")}]). ` +
-      (isSendStyle
-        ? `"${cfg.action}" looks like a send/message/notify action — that must go through OutreachChannel + ` +
-          `Approval (docs/build-conventions.md guardrail #2), never this seam.`
-        : `"${cfg.action}" does not match the default CRM-record allowlist.`) +
-      ` If this is genuinely a CRM record operation the default allowlist doesn't recognize, set ` +
+      `[${[...SAFE_ACTION_VERBS].join(", ")}] combined with a noun from [${[...CRM_RECORD_NOUNS].join(", ")}], ` +
+      `with no send-intent substring anywhere in the slug). "${cfg.action}" does not match the default CRM-record ` +
+      `allowlist. If this is genuinely a CRM record operation the default allowlist doesn't recognize, set ` +
       `\`dangerouslyAllowAnyAction: true\` on this action's config — doing so takes it OFF this seam's enforced ` +
-      `boundary and is entirely the deployer's responsibility to keep pointed at a CRM record, never a send.`,
+      `boundary (for a non-standard RECORD op only; it can never enable a send) and is entirely the deployer's ` +
+      `responsibility to keep pointed at a CRM record, never a send.`,
   );
 }
 
