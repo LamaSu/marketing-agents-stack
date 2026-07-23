@@ -98,15 +98,48 @@ graph. Omit any of `score` / `decision` / `outcome` to no-op that push type.
 For tests, construct `new ComposioCrmSync(fakeClient, { actions })` directly
 — no SDK, no network.
 
+### CRM-record-only action allowlist
+
+Every configured `action` slug is checked at construction time against a
+default allowlist: a record-update/upsert/create/log verb (e.g. `UPDATE`,
+`UPSERT`, `CREATE`, `LOG`) combined with a CRM-record noun (e.g. `CONTACT`,
+`RECORD`, `LEAD`, `ACTIVITY`) — matching `HUBSPOT_UPDATE_CONTACT`,
+`SALESFORCE_UPDATE_RECORD`, `HUBSPOT_LOG_ACTIVITY`, etc. A slug that looks
+like a send/message/notify action (`SEND`, `EMAIL`, `MESSAGE`, `SMS`,
+`WEBHOOK`, …) is **always refused**, even if it also contains a record
+noun — those must go through `OutreachChannel` + `Approval`, never this
+seam. Constructing `new ComposioCrmSync(...)` with a disallowed action
+**throws immediately** (a configuration error, not a push failure — the one
+deliberate exception to "never throws" below). If a genuine CRM record
+operation doesn't match the default allowlist, opt it out explicitly and
+per-action: `{ action: "...", mapArgs, dangerouslyAllowAnyAction: true }` —
+doing so takes that action off this seam's enforced boundary.
+
 ## Degrade-safe by construction
 
 Every real implementation in this package (`httpCrmSync`, `composioCrmSync`)
-**never throws**. A push failure — network error, timeout, non-2xx, a
-Composio action failure — logs one `console.warn` and resolves. `noopCrmSync`
-sets the floor: doing nothing is always a valid, safe outcome. This mirrors
+**never throws from a push call**. A push failure — network error, timeout,
+non-2xx, a Composio action failure, or a payload that fails schema
+validation — logs one `console.warn` and resolves. `noopCrmSync` sets the
+floor: doing nothing is always a valid, safe outcome. This mirrors
 `crawl4aiFetchSite`'s "degraded, never broken" contract exactly, and means a
 `CrmSync` can be wired into a live pipeline with zero risk of it becoming a
-new failure mode for the rest of the loop.
+new failure mode for the rest of the loop. The one exception is
+`composioCrmSync`'s construction-time action-allowlist check above — a
+disallowed action is a wiring mistake, not a push failure, and fails loud
+on purpose.
+
+## Field projection (never forward unvalidated fields)
+
+`pushDecision`/`pushOutcome` on both implementations parse the incoming
+value through its own `Decision`/`Outcome` zod schema before it reaches the
+CRM — the schema's default (no `.strict()`/`.passthrough()`) behavior strips
+any unknown keys. This means an object carrying extra enumerable fields
+(e.g. spliced on via an upstream `as any` cast) only ever sends the fields
+the schema actually defines — never a caller-added `recipient`/`subject`/
+`body` or anything else outside the seam's contract. `pushScore` hand-picks
+`domain`/`score`/`tier`/`lastScoredAt` onto a fresh literal already, so it
+needs no separate projection step.
 
 ## Assumption to verify on a real install
 

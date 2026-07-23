@@ -24,8 +24,20 @@
  * key necessarily lives in the URL, EVERY string this module could log (the
  * URL, any thrown error's message) is passed through `redactSecret` first —
  * the key is used to build a request, never to build a log line.
+ *
+ * FIELD PROJECTION (audit finding #11): `pushDecision`/`pushOutcome` used to
+ * POST the caller's `decision`/`outcome` object directly, so an object
+ * carrying extra enumerable fields (e.g. smuggled on via an upstream
+ * `as any` cast — `{ ...decision, recipient, subject, body }`) would
+ * serialize ALL of them to the CRM endpoint. Both now go through `project()`
+ * below, which re-`parse()`s the value through its own `Decision`/`Outcome`
+ * zod schema first — zod's default (no `.strict()`/`.passthrough()`) object
+ * behavior strips unknown keys, so only the schema's real fields ever reach
+ * `JSON.stringify`. `pushScore` was already safe (it hand-picks
+ * domain/score/tier/lastScoredAt onto a fresh literal) and is unchanged.
  */
-import type { Account, Decision, Outcome } from "@mstack/core";
+import { Decision, Outcome } from "@mstack/core";
+import type { Account } from "@mstack/core";
 import type { CrmSync } from "./crm-sync.js";
 
 export interface HttpCrmSyncConfig {
@@ -55,6 +67,27 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 /** Replace every occurrence of `secret` in `text` before it is ever logged. */
 function redactSecret(text: string, secret: string): string {
   return secret ? text.split(secret).join("[REDACTED]") : text;
+}
+
+/**
+ * Parse `value` through `schema`, returning ONLY the schema's recognized
+ * fields (zod's default unknown-key-stripping — see the file header's FIELD
+ * PROJECTION note). Never throws: if `value` doesn't actually satisfy
+ * `schema` (a genuinely malformed shape, not merely extra fields — those are
+ * the point of this function and are silently dropped), this degrades to a
+ * warning and `undefined`, matching this module's "never break the caller"
+ * contract exactly like a network failure would.
+ */
+function project<T>(label: string, schema: { parse(value: unknown): T }, value: unknown): T | undefined {
+  try {
+    return schema.parse(value);
+  } catch (err) {
+    console.warn(
+      `[@mstack/adapters-crm] httpCrmSync: ${label} push skipped — payload failed schema validation (${String(err)}); ` +
+        `refusing to forward unvalidated fields to the CRM`,
+    );
+    return undefined;
+  }
 }
 
 /**
@@ -118,10 +151,16 @@ export function createHttpCrmSync(config: HttpCrmSyncConfig): CrmSync {
       });
     },
     async pushDecision(decision: Decision): Promise<void> {
-      await post("decision", "/decisions", decision);
+      // Project through the Decision schema first (finding #11) -- strips any
+      // extra runtime fields before they can ever reach JSON.stringify/the wire.
+      const projected = project("decision", Decision, decision);
+      if (projected === undefined) return;
+      await post("decision", "/decisions", projected);
     },
     async pushOutcome(outcome: Outcome): Promise<void> {
-      await post("outcome", "/outcomes", outcome);
+      const projected = project("outcome", Outcome, outcome);
+      if (projected === undefined) return;
+      await post("outcome", "/outcomes", projected);
     },
   };
 }

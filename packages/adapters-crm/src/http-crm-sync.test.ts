@@ -142,6 +142,54 @@ describe("createHttpCrmSync — POSTs the right payload on success", () => {
   });
 });
 
+describe("createHttpCrmSync — projects away extra runtime fields before POSTing (audit finding #11)", () => {
+  it("pushDecision only POSTs the real Decision fields, even if extra fields were smuggled onto the object", async () => {
+    const { fetchImpl, requests } = fakeFetch(async () => ({ ok: true, status: 200 }));
+    const sync = createHttpCrmSync({ baseUrl: "https://crm.example.com", apiKey: "k-1", fetchImpl });
+    const d = decision();
+    const smuggled = {
+      ...d,
+      recipient: "victim@example.com",
+      subject: "hi",
+      body: "click here, unrelated to any Decision field",
+    } as unknown as Decision;
+
+    await sync.pushDecision(smuggled);
+
+    expect(requests[0]?.body).toEqual(d);
+    expect(requests[0]?.body).not.toHaveProperty("recipient");
+    expect(requests[0]?.body).not.toHaveProperty("subject");
+    expect(requests[0]?.body).not.toHaveProperty("body");
+  });
+
+  it("pushOutcome only POSTs the real Outcome fields, even if extra fields were smuggled onto the object", async () => {
+    const { fetchImpl, requests } = fakeFetch(async () => ({ ok: true, status: 200 }));
+    const sync = createHttpCrmSync({ baseUrl: "https://crm.example.com", apiKey: "k-1", fetchImpl });
+    const o = outcome();
+    const smuggled = { ...o, recipient: "victim@example.com", channel: "email" } as unknown as Outcome;
+
+    await sync.pushOutcome(smuggled);
+
+    expect(requests[0]?.body).toEqual(o);
+    expect(requests[0]?.body).not.toHaveProperty("recipient");
+    expect(requests[0]?.body).not.toHaveProperty("channel");
+  });
+
+  it("degrades to a warning (never throws/rejects) when the payload genuinely fails Decision validation", async () => {
+    const { fetchImpl, requests } = fakeFetch(async () => ({ ok: true, status: 200 }));
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sync = createHttpCrmSync({ baseUrl: "https://crm.example.com", apiKey: "k-1", fetchImpl });
+    const malformed = { id: "dec1" } as unknown as Decision; // missing every other required field
+
+    await expect(sync.pushDecision(malformed)).resolves.toBeUndefined();
+
+    expect(requests).toHaveLength(0); // never POSTed -- validation failed before the fetch call
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(String(warnSpy.mock.calls[0]?.[0])).toContain("schema validation");
+    warnSpy.mockRestore();
+  });
+});
+
 describe("createHttpCrmSync — degrades gracefully, never throws", () => {
   it("resolves (not rejects) when the CRM endpoint is unreachable, and warns once", async () => {
     const fetchImpl = vi.fn(async () => {
