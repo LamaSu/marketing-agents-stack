@@ -182,11 +182,16 @@ const CRM_RECORD_NOUNS = new Set([
  * Whether `"EMAIL"` is a send ACTION (dangerous) vs a record FIELD (benign)
  * is resolved separately, and positionally, by `isEmailUsedAsVerb` below.
  */
-const SEND_INTENT_SUBSTRINGS = [
+// EXACT send-verb tokens — matched per-token, NEVER as a substring, so benign
+// field names can't false-positive (the round-2 regression: "POST" hit "POSTAL",
+// "DM" hit "ADMIN", "CAMPAIGN"/"PUSH"/"TEXT"/"CALL" were similarly ambiguous).
+const SEND_VERB_TOKENS = new Set([
   "SEND", "MESSAGE", "SMS", "MMS", "DISPATCH", "NOTIFY", "NOTIFICATION",
-  "WEBHOOK", "CALL", "BROADCAST", "CAMPAIGN", "PUSH", "TEXT", "POST",
-  "PUBLISH", "INVITE", "SHARE", "REPLY", "DM", "CHAT",
-];
+  "WEBHOOK", "BROADCAST", "PUBLISH", "INVITE", "SHARE", "REPLY", "DM", "CHAT",
+]);
+// Unambiguous multi-char fragments safe to match INSIDE a fused token
+// (e.g. "SENDEMAIL", "POSTMESSAGE") — long enough not to collide with field names.
+const SEND_FUSED_FRAGMENTS = ["SEND", "MESSAGE", "WEBHOOK", "BROADCAST", "NOTIFICATION"];
 
 /** Split a Composio action slug into uppercase `_`/non-alnum-delimited tokens.
  *  Used for the EXACT verb/noun/field matches below. */
@@ -194,38 +199,31 @@ function actionTokens(action: string): string[] {
   return action.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
 }
 
-/** Collapse the slug to one uppercase alphanumeric run with delimiters
- *  stripped entirely, e.g. `"GMAIL_SENDEMAIL_CONTACT_UPDATE"` ->
- *  `"GMAILSENDEMAILCONTACTUPDATE"`. Used ONLY for the substring/concatenation
- *  check below — the exact-token verb/noun checks always use `actionTokens`. */
-function concatenatedSlug(action: string): string {
-  return action.toUpperCase().replace(/[^A-Z0-9]/g, "");
-}
-
-/** True if any send-intent substring (see `SEND_INTENT_SUBSTRINGS`'s doc
- *  comment — bare `"EMAIL"` is deliberately excluded) appears ANYWHERE in the
- *  slug, including fused inside a bigger token like `"SENDEMAIL"`. */
-function hasSendIntentSubstring(action: string): boolean {
-  const concat = concatenatedSlug(action);
-  return SEND_INTENT_SUBSTRINGS.some((s) => concat.includes(s));
+/** True if any TOKEN is a send-action verb: an exact send-verb token, a token
+ *  STARTING WITH "SEND" (catches fused `SENDEMAIL`/`SENDSMS`), or a token
+ *  CONTAINING an unambiguous fused fragment (catches `POSTMESSAGE`). Token-scoped,
+ *  so benign field tokens (`POSTAL`, `ADMIN`, `CAMPAIGN`) never false-positive. */
+function hasSendVerbToken(tokens: string[]): boolean {
+  return tokens.some(
+    (t) =>
+      SEND_VERB_TOKENS.has(t) ||
+      t.startsWith("SEND") ||
+      SEND_FUSED_FRAGMENTS.some((f) => t.includes(f)),
+  );
 }
 
 /**
- * True when `"EMAIL"` is functioning as the action's own send VERB (e.g. a
- * hypothetical "email the contact" action with no other send-intent
- * substring) rather than as a trailing FIELD qualifier on an already-safe
- * record verb (e.g. `HUBSPOT_UPDATE_CONTACT_EMAIL` — "update the contact's
- * email field"). The distinguishing signal: once the slug ALREADY reads as a
- * safe record verb + record noun WITHOUT needing the `"EMAIL"` token at all,
- * `"EMAIL"` is left over as a benign field reference; otherwise it is the
- * only thing giving the slug a verb-like shape, so it's read as the action
- * itself and refused.
+ * True when `"EMAIL"` is the action's own send VERB rather than a trailing FIELD
+ * qualifier — resolved POSITIONALLY. Composio slugs are `PROVIDER_VERB_NOUN…`, so
+ * `EMAIL` in the verb slot (token index 1, right after the provider prefix:
+ * `OUTLOOK_EMAIL_CONTACT_UPDATE`) is the send verb → refused; `EMAIL` anywhere
+ * later (`HUBSPOT_UPDATE_CONTACT_EMAIL` — the contact's email FIELD) is benign.
+ * Position-based (not "is there another verb"), so a send that ALSO carries a
+ * record verb — like `OUTLOOK_EMAIL_CONTACT_UPDATE` — is still caught. Actions
+ * that reach here without matching the record allowlist are refused anyway.
  */
-function isEmailUsedAsVerb(tokens: string[]): boolean {
-  if (!tokens.includes("EMAIL")) return false;
-  const hasSafeVerbElsewhere = tokens.some((t) => SAFE_ACTION_VERBS.has(t));
-  const hasRecordNoun = tokens.some((t) => CRM_RECORD_NOUNS.has(t));
-  return !(hasSafeVerbElsewhere && hasRecordNoun);
+function emailIsVerb(tokens: string[]): boolean {
+  return tokens[1] === "EMAIL";
 }
 
 /**
@@ -248,7 +246,7 @@ function assertCrmActionAllowed(
 ): void {
   if (!cfg) return; // not configured for this push type -- nothing to check
   const tokens = actionTokens(cfg.action);
-  const isSendStyle = hasSendIntentSubstring(cfg.action) || isEmailUsedAsVerb(tokens);
+  const isSendStyle = hasSendVerbToken(tokens) || emailIsVerb(tokens);
   const isDefaultAllowed =
     !isSendStyle &&
     tokens.some((t) => SAFE_ACTION_VERBS.has(t)) &&

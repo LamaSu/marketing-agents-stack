@@ -69,6 +69,19 @@ longer holds and the residuals below become exploitable. See "Hardening for that
    should add an SSRF allowlist.
 5. **DPoP multi-process.** The default jti store is single-process in-memory; a multi-process
    deployment must supply a shared atomic (e.g. Redis) `JtiStore`.
+6. **At-least-once delivery (send-then-crash).** If a channel *accepts* a send and then throws
+   (network blip after the provider took it), dispatch reverts the draft to `approved` and a retry
+   re-sends. This can't be closed in our code alone — it needs **provider-side idempotency keys**.
+   The offline `LocalOutreachChannel` is already idempotent (keyed by draft id); a real channel
+   should pass an idempotency key derived from the draft id.
+7. **Non-atomic send/record + approve↔dispatch TOCTOU.** The channel send, the status flip, and the
+   `Outcome` insert are three steps, not one transaction, so a crash between them can leave a sent
+   draft without an `Outcome`; and `approve()`/`reject()` check-then-set status separately from the
+   atomic dispatch claim. Both need a real DB transaction (the designed Postgres backing) or process
+   isolation — out of scope for the single-writer embedded-DuckDB local tool.
+8. **Double-encoded path traversal.** `%2f`/`%2e` are refused, but `%252f` (double-encoded) is only
+   exploitable through a downstream proxy that decodes twice — an esoteric, deployment-specific edge;
+   a hardened deployment behind such a proxy should recursively decode before the base-URL check.
 
 ## Hardening for a network-exposed / multi-tenant deployment
 

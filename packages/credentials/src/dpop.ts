@@ -230,17 +230,19 @@ export interface JtiStore {
  * REJECTED (fail closed) rather than silently forgetting a fresh one -- an unexpired jti is never
  * dropped. Raise `maxEntries` (or use a shared store) if legitimate in-window volume can exceed it.
  *
- * `ttlSeconds` MUST be >= the verifier's `maxAgeSeconds` (both default 300): the store has to
- * remember a jti for at least as long as a verifier will still accept the proof, or a purged-early
- * jti could be replayed. It records at consume time (>= the proof's `iat`), so `consumeTime + ttl`
- * covers the whole `iat + maxAge` acceptance window. Not shared across processes (see `JtiStore`
- * doc); `clock` is injectable for deterministic tests.
+ * `ttlSeconds` MUST be >= the verifier's `maxAgeSeconds + clockSkewSeconds` (default 300 + 5 = 305,
+ * hence the 305 default here). A verifier accepts a proof whose `iat` is up to `clockSkewSeconds` in
+ * the FUTURE, so the freshness window runs to `iat + maxAge` = `now + skew + maxAge`; the jti is
+ * consumed at `now`, so `now + ttl` must reach that — otherwise a future-skewed proof could be
+ * replayed in the gap after the jti is purged but before it stops being fresh (a real edge the first
+ * `>= maxAgeSeconds` reasoning missed). Not shared across processes (see `JtiStore` doc); `clock`
+ * is injectable for deterministic tests.
  */
 export function createMemoryJtiStore(
   options: { maxEntries?: number; ttlSeconds?: number; clock?: () => number } = {},
 ): JtiStore {
   const maxEntries = options.maxEntries ?? 100_000;
-  const ttlMs = (options.ttlSeconds ?? 300) * 1000;
+  const ttlMs = (options.ttlSeconds ?? 305) * 1000; // maxAge(300) + clockSkew(5); see doc above
   const clock = options.clock ?? Date.now;
   // jti -> expiry (ms epoch). Uniform ttl => insertion order == expiry order (front expires first).
   const seen = new Map<string, number>();
@@ -356,7 +358,14 @@ export async function verifyDpopProof(proofJwt: string, options: DpopVerifyOptio
     const parts = proofJwt.split(".");
     if (parts.length !== 3) return { valid: false, reason: "malformed: expected 3 JWT segments" };
     const [h, p, s] = parts as [string, string, string];
-    header = JSON.parse(b64uDecodeToString(h)) as DpopHeader;
+    const rawHeader: unknown = JSON.parse(b64uDecodeToString(h));
+    if (typeof rawHeader !== "object" || rawHeader === null) {
+      // A decoded `null`/array/primitive header is valid JSON but not a header
+      // object — guard here so the `header.typ` read below never throws (the
+      // documented never-throws contract).
+      return { valid: false, reason: "malformed: header is not an object" };
+    }
+    header = rawHeader as DpopHeader;
     const rawPayload = JSON.parse(b64uDecodeToString(p)) as Record<string, unknown>;
     if (
       typeof rawPayload.htm !== "string" ||

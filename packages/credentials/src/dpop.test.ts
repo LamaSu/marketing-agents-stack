@@ -234,6 +234,16 @@ describe("DPoP verify guards", () => {
       verifyDpopProof(proof, { htm: "GET", htu: "https://h/x", now: FIXED_MS }),
     ).resolves.toMatchObject({ valid: false, reason: "malformed htu" });
   });
+
+  it("#9-round3: a decoded NULL header resolves invalid -- never throws (header.typ would throw on null)", async () => {
+    const b64u = (o: unknown): string => Buffer.from(JSON.stringify(o), "utf8").toString("base64url");
+    // header segment decodes to JSON `null` (valid JSON, not an object); dummy sig — the
+    // structure guard rejects before signature verification is ever reached.
+    const proof = `${b64u(null)}.${b64u({ htm: "GET", htu: "https://h/x", iat: 1_700_000_000, jti: "null-hdr-jti" })}.AAAA`;
+    await expect(
+      verifyDpopProof(proof, { htm: "GET", htu: "https://h/x", now: FIXED_MS }),
+    ).resolves.toMatchObject({ valid: false });
+  });
 });
 
 // --- replay store: expiry-based eviction (#9b) -------------------------------

@@ -249,6 +249,26 @@ describe("ComposioCrmSync — round-2 hardening: false-negative + false-positive
     ).toThrow(/send\/message\/notify/i);
   });
 
+  it("round-3: allows a record update whose FIELD name merely CONTAINS a send substring (HUBSPOT_UPDATE_CONTACT_POSTAL_CODE — 'POSTAL' ≠ 'POST')", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { score: { action: "HUBSPOT_UPDATE_CONTACT_POSTAL_CODE", mapArgs: () => ({ postalCode: "94107" }) } },
+        }),
+    ).not.toThrow();
+  });
+
+  it("round-3: refuses EMAIL in the VERB slot even when a record verb is also present (OUTLOOK_EMAIL_CONTACT_UPDATE — a send)", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { decision: { action: "OUTLOOK_EMAIL_CONTACT_UPDATE", mapArgs: () => ({}) } },
+        }),
+    ).toThrow(/send\/message\/notify/i);
+  });
+
   it("dangerouslyAllowAnyAction cannot override a clear send-intent action — hard refuse regardless", () => {
     const { client } = fakeComposio();
     const build = () =>
