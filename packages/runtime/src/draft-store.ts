@@ -98,10 +98,13 @@ export class DraftStore {
    * Refuses a draft that is already `status:'dispatched'`. Without this check, re-approving an
    * already-sent draft would flip its status back to `'approved'`, and `dispatchDraft`'s own
    * guard (which only checks the CURRENT status, not history) would then accept a second
-   * `approveAndDispatch` call and dispatch it again — a real double-send. Re-approving from
-   * `'pending'` (the normal path), `'approved'` (an idempotent retry after e.g. a transient
-   * channel failure), or `'rejected'` (a human reversing an earlier rejection) are all
-   * legitimate and remain allowed; only the post-dispatch state is terminal.
+   * `approveAndDispatch` call and dispatch it again — a real double-send. Also refuses a draft
+   * that is currently `status:'dispatching'` (a send is IN FLIGHT): approving it would yank it
+   * back to `'approved'` mid-send, and a concurrent dispatch could then claim and send it a second
+   * time. Re-approving from `'pending'` (the normal path), `'approved'` (an idempotent retry after
+   * e.g. a transient channel failure that reverted the draft), or `'rejected'` (a human reversing
+   * an earlier rejection) are all legitimate and remain allowed; only in-flight and post-dispatch
+   * states are refused.
    */
   async approve(draftId: string, actor: string): Promise<Approval> {
     const draft = await this.#memory.getDraft(draftId);
@@ -112,6 +115,13 @@ export class DraftStore {
       throw new Error(
         `DraftStore.approve: refused — draft "${draftId}" was already dispatched; approving it ` +
           "again would risk a duplicate send",
+      );
+    }
+    if (draft.status === "dispatching") {
+      throw new Error(
+        `DraftStore.approve: refused — draft "${draftId}" is currently being dispatched ` +
+          "(status 'dispatching'); wait for the in-flight send to settle (it ends 'dispatched' on " +
+          "success or reverts to 'approved' on failure) before approving again",
       );
     }
     // Bind this approval to the CONTENT being approved (#2): the hash of the draft's
@@ -135,7 +145,9 @@ export class DraftStore {
    * A rejected draft can never reach `dispatchDraft` (which requires `status:'approved'`).
    *
    * Refuses a draft that is already `status:'dispatched'` — for the same reason `approve()`
-   * does: the send already happened, and the audit trail should not claim otherwise.
+   * does: the send already happened, and the audit trail should not claim otherwise. Also refuses
+   * a `status:'dispatching'` draft: rejecting mid-send could revert an in-flight send's bookkeeping
+   * and race the dispatch's own status transitions — wait for the send to settle first.
    */
   async reject(draftId: string, actor: string): Promise<Approval> {
     const draft = await this.#memory.getDraft(draftId);
@@ -145,6 +157,12 @@ export class DraftStore {
     if (draft.status === "dispatched") {
       throw new Error(
         `DraftStore.reject: refused — draft "${draftId}" was already dispatched; it cannot be rejected after the fact`,
+      );
+    }
+    if (draft.status === "dispatching") {
+      throw new Error(
+        `DraftStore.reject: refused — draft "${draftId}" is currently being dispatched ` +
+          "(status 'dispatching'); wait for the in-flight send to settle before rejecting",
       );
     }
     const approval = await this.#memory.appendApproval({

@@ -120,6 +120,23 @@ describe("DraftStore", () => {
       // status remains 'dispatched', not silently flipped back to 'approved'.
       expect((await memory.getDraft("dr_store1"))?.status).toBe("dispatched");
     });
+
+    it("refuses to approve a draft that is currently 'dispatching' (send in flight)", async () => {
+      await store.save(draftInput());
+      // simulate dispatch.ts having atomically claimed this draft for an in-flight send.
+      await memory.setDraftStatus("dr_store1", "dispatching");
+
+      await expect(store.approve("dr_store1", "human")).rejects.toThrow(
+        /currently being dispatched/,
+      );
+
+      // no new Approval was appended, and the status is NOT yanked back to 'approved' mid-send.
+      const approvalRows = await memory.query<{ c: number | bigint }>(
+        "SELECT COUNT(*) as c FROM approvals",
+      );
+      expect(Number(approvalRows[0]?.c ?? -1)).toBe(0);
+      expect((await memory.getDraft("dr_store1"))?.status).toBe("dispatching");
+    });
   });
 
   describe("reject", () => {
@@ -145,6 +162,14 @@ describe("DraftStore", () => {
 
       await expect(store.reject("dr_store1", "human")).rejects.toThrow(/already dispatched/);
       expect((await memory.getDraft("dr_store1"))?.status).toBe("dispatched");
+    });
+
+    it("refuses to reject a draft that is currently 'dispatching' (send in flight)", async () => {
+      await store.save(draftInput());
+      await memory.setDraftStatus("dr_store1", "dispatching");
+
+      await expect(store.reject("dr_store1", "human")).rejects.toThrow(/currently being dispatched/);
+      expect((await memory.getDraft("dr_store1"))?.status).toBe("dispatching");
     });
   });
 
