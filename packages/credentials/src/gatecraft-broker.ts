@@ -26,7 +26,7 @@ import { nowIso } from "@mstack/core";
 import { type CredentialBroker, type ProxyRequest, type ProxyResponse, type LogSink } from "./types.js";
 import { type DpopSigner } from "./dpop.js";
 import { consoleLogSink } from "./util.js";
-import { ProviderRegistry, defaultRegistry } from "./registry.js";
+import { ProviderRegistry, defaultRegistry, isUrlWithinBase } from "./registry.js";
 
 /** The injected MCP transport. `tool` is the gatecraft tool name; `args` its arguments. */
 export type GcInvoke = (tool: string, args: Record<string, unknown>) => Promise<unknown>;
@@ -72,6 +72,19 @@ export class GatecraftBroker implements CredentialBroker {
 
   async proxyCall(req: ProxyRequest): Promise<ProxyResponse> {
     const provider = this.#registry.get(req.providerId);
+
+    // #4 (defense in depth): don't even ask gatecraft to inject a secret into an off-base URL.
+    // This broker has no env access, so it validates the STATIC `baseUrl` only; per-org providers
+    // (`baseUrlEnv`, e.g. Salesforce) are validated by gatecraft server-side. Fires only when
+    // authInject requests injection.
+    const injectsSecret = req.authInject?.header !== undefined || req.authInject?.query !== undefined;
+    const staticBase = provider?.baseUrl;
+    if (injectsSecret && staticBase !== undefined && !isUrlWithinBase(req.url, staticBase)) {
+      throw new Error(
+        `credentials: refusing to proxy a secret injection for provider "${req.providerId}" -- ` +
+          `request URL is outside the registered base "${staticBase}".`,
+      );
+    }
     // OPT-IN: bind the request to the agent key. `htu` inside the proof strips the query, so no
     // gatecraft-injected secret can enter it. Default off -> forwarded headers are unchanged.
     const headers = this.#dpopSigner

@@ -10,7 +10,7 @@ import { nowIso } from "@mstack/core";
 import { type CredentialBroker, type ProxyRequest, type ProxyResponse, type LogSink } from "./types.js";
 import { type DpopSigner } from "./dpop.js";
 import { consoleLogSink } from "./util.js";
-import { ProviderRegistry, defaultRegistry } from "./registry.js";
+import { ProviderRegistry, defaultRegistry, isUrlWithinBase, type ProviderConfig } from "./registry.js";
 
 export interface LocalBrokerOptions {
   registry?: ProviderRegistry;
@@ -48,6 +48,37 @@ export class LocalBroker implements CredentialBroker {
     return this.#env[keyName];
   }
 
+  /** Resolve a provider's destination allow-base: static `baseUrl`, else per-org `baseUrlEnv`. */
+  #allowedBase(provider: ProviderConfig | undefined): string | undefined {
+    if (provider?.baseUrl !== undefined) return provider.baseUrl;
+    if (provider?.baseUrlEnv !== undefined) return this.#readEnv(provider.baseUrlEnv);
+    return undefined;
+  }
+
+  /**
+   * #4 destination binding. Throw unless `url` is within the provider's registered base -- called
+   * BEFORE the secret is read, so an off-base URL means the secret is never loaded, never injected,
+   * never sent. The thrown message carries the provider id + base (config, not a secret), never the
+   * secret or the caller URL.
+   */
+  #assertUrlWithinBase(provider: ProviderConfig | undefined, url: string): void {
+    const who = provider?.providerId ?? "(unregistered)";
+    const base = this.#allowedBase(provider);
+    if (base === undefined || base === "") {
+      throw new Error(
+        `credentials: refusing to inject a secret for provider "${who}" -- no registered baseUrl ` +
+          `(or baseUrlEnv) to bind the destination to. Register a base, or omit authInject for an ` +
+          `unauthenticated call.`,
+      );
+    }
+    if (!isUrlWithinBase(url, base)) {
+      throw new Error(
+        `credentials: refusing to inject a secret for provider "${who}" -- request URL is outside ` +
+          `the registered base "${base}".`,
+      );
+    }
+  }
+
   async resolve(providerId: string, keyName: string): Promise<string | undefined> {
     const value = this.#readEnv(keyName);
     this.#log({ ts: nowIso(), action: "resolve", providerId, keyName, found: value !== undefined });
@@ -56,8 +87,16 @@ export class LocalBroker implements CredentialBroker {
 
   async proxyCall(req: ProxyRequest): Promise<ProxyResponse> {
     const provider = this.#registry.get(req.providerId);
+
+    // #4 DESTINATION BINDING: a resolved secret may only be injected into a call whose URL is
+    // within the provider's registered base. Enforced HERE, before the secret is read -- an
+    // off-base URL throws, so the secret is never loaded/injected/sent. Only fires when authInject
+    // actually requests injection; an unauthenticated proxy call is a plain fetch (no secret to leak).
+    const injectsSecret = req.authInject?.header !== undefined || req.authInject?.query !== undefined;
+    if (injectsSecret) this.#assertUrlWithinBase(provider, req.url);
+
     const keyName = provider?.keyNames[0];
-    const secret = keyName ? this.#readEnv(keyName) : undefined;
+    const secret = injectsSecret && keyName ? this.#readEnv(keyName) : undefined;
 
     const headers: Record<string, string> = { ...(req.headers ?? {}) };
     // OPT-IN: bind this request to the agent key. `htu` (inside proof) strips the query, so a

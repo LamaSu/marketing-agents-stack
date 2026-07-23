@@ -7,6 +7,7 @@ import {
   defaultRegistry,
   ProviderRegistry,
   forProvider,
+  isUrlWithinBase,
   type BrokerLogEntry,
 } from "./index.js";
 
@@ -49,7 +50,7 @@ describe("LocalBroker.proxyCall", () => {
       });
     };
     const registry = new ProviderRegistry();
-    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"] });
+    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"], baseUrl: "https://example.com" });
     const broker = new LocalBroker({ registry, env: { FAKE_API_KEY: SECRET }, fetchImpl: fakeFetch, log: () => {} });
 
     const res = await broker.proxyCall({
@@ -72,7 +73,7 @@ describe("LocalBroker.proxyCall", () => {
       return new Response("{}", { status: 200 });
     };
     const registry = new ProviderRegistry();
-    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"] });
+    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"], baseUrl: "https://example.com" });
     const logs: BrokerLogEntry[] = [];
     const broker = new LocalBroker({
       registry,
@@ -98,7 +99,7 @@ describe("LocalBroker.proxyCall", () => {
     const fakeFetch: typeof fetch = async () =>
       new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "content-type": "application/json" } });
     const registry = new ProviderRegistry();
-    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"] });
+    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"], baseUrl: "https://example.com" });
     const logs: BrokerLogEntry[] = [];
     const broker = new LocalBroker({
       registry,
@@ -134,6 +135,141 @@ describe("LocalBroker.proxyCall", () => {
     expect(capturedInit?.body).toBe(JSON.stringify({ hello: "world" }));
     expect((capturedInit?.headers as Record<string, string>)?.["content-type"]).toBe("application/json");
     expect(res.status).toBe(201);
+  });
+
+  it("#4: refuses to inject a secret when the URL is off the provider's registered base host", async () => {
+    let fetched = false;
+    const fetchImpl: typeof fetch = async () => {
+      fetched = true;
+      return new Response("{}", { status: 200 });
+    };
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "posthog", keyNames: ["POSTHOG_API_KEY"], baseUrl: "https://app.posthog.com" });
+    const logs: BrokerLogEntry[] = [];
+    const broker = new LocalBroker({ registry, env: { POSTHOG_API_KEY: SECRET }, fetchImpl, log: (e) => logs.push(e) });
+
+    await expect(
+      broker.proxyCall({
+        providerId: "posthog",
+        method: "GET",
+        url: "https://evil.example.com/steal",
+        authInject: { header: "Authorization" },
+      }),
+    ).rejects.toThrow(/refusing to inject/i);
+
+    expect(fetched).toBe(false); // the off-base request is never made...
+    expect(JSON.stringify(logs)).not.toContain(SECRET); // ...and the secret never touches a log line
+  });
+
+  it("#4: an in-base path on the registered host is still allowed", async () => {
+    let capturedUrl = "";
+    const fetchImpl: typeof fetch = async (input) => {
+      capturedUrl = input.toString();
+      return new Response("{}", { status: 200 });
+    };
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "posthog", keyNames: ["POSTHOG_API_KEY"], baseUrl: "https://app.posthog.com" });
+    const broker = new LocalBroker({ registry, env: { POSTHOG_API_KEY: SECRET }, fetchImpl, log: () => {} });
+    const res = await broker.proxyCall({
+      providerId: "posthog",
+      method: "GET",
+      url: "https://app.posthog.com/api/projects",
+      authInject: { header: "Authorization" },
+    });
+    expect(capturedUrl).toBe("https://app.posthog.com/api/projects");
+    expect(res.status).toBe(200);
+  });
+
+  it("#4: binds a per-org provider to baseUrlEnv (Salesforce instance URL) and refuses off-instance", async () => {
+    const fetches: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      fetches.push(input.toString());
+      return new Response("{}", { status: 200 });
+    };
+    const registry = new ProviderRegistry();
+    registry.register({
+      providerId: "salesforce",
+      keyNames: ["SALESFORCE_ACCESS_TOKEN"],
+      baseUrlEnv: "SALESFORCE_INSTANCE_URL",
+    });
+    const broker = new LocalBroker({
+      registry,
+      env: { SALESFORCE_ACCESS_TOKEN: SECRET, SALESFORCE_INSTANCE_URL: "https://acme.my.salesforce.com" },
+      fetchImpl,
+      log: () => {},
+    });
+
+    const ok = await broker.proxyCall({
+      providerId: "salesforce",
+      method: "GET",
+      url: "https://acme.my.salesforce.com/services/data/v60.0/sobjects/Lead",
+      authInject: { header: "Authorization" },
+    });
+    expect(ok.status).toBe(200);
+
+    await expect(
+      broker.proxyCall({
+        providerId: "salesforce",
+        method: "GET",
+        url: "https://evil.my.salesforce.com/services/data/v60.0/sobjects/Lead",
+        authInject: { header: "Authorization" },
+      }),
+    ).rejects.toThrow(/outside the registered base/i);
+    expect(fetches).toHaveLength(1); // only the in-instance call went out
+  });
+
+  it("#4: refuses to inject when neither baseUrl nor baseUrlEnv resolves (fail closed)", async () => {
+    const fetchImpl: typeof fetch = async () => new Response("{}", { status: 200 });
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "unbound", keyNames: ["UNBOUND_KEY"] }); // no base of any kind
+    const broker = new LocalBroker({ registry, env: { UNBOUND_KEY: SECRET }, fetchImpl, log: () => {} });
+    await expect(
+      broker.proxyCall({
+        providerId: "unbound",
+        method: "GET",
+        url: "https://anywhere.example.com/x",
+        authInject: { header: "Authorization" },
+      }),
+    ).rejects.toThrow(/no registered baseUrl/i);
+  });
+
+  it("#4: an UNAUTHENTICATED proxy call (no authInject) is unaffected by base binding", async () => {
+    let capturedUrl = "";
+    const fetchImpl: typeof fetch = async (input) => {
+      capturedUrl = input.toString();
+      return new Response("{}", { status: 200 });
+    };
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "posthog", keyNames: ["POSTHOG_API_KEY"], baseUrl: "https://app.posthog.com" });
+    const broker = new LocalBroker({ registry, env: { POSTHOG_API_KEY: SECRET }, fetchImpl, log: () => {} });
+    // off-base URL but NO authInject -> no secret to leak -> allowed (plain fetch)
+    const res = await broker.proxyCall({ providerId: "posthog", method: "GET", url: "https://cdn.example.com/pub" });
+    expect(capturedUrl).toBe("https://cdn.example.com/pub");
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("isUrlWithinBase (destination binding, finding #4)", () => {
+  it("matches same scheme+host, allows any path under a host-root base", () => {
+    expect(isUrlWithinBase("https://app.posthog.com/api/x", "https://app.posthog.com")).toBe(true);
+    expect(isUrlWithinBase("https://app.posthog.com/", "https://app.posthog.com")).toBe(true);
+  });
+  it("rejects a different host, scheme, or port", () => {
+    expect(isUrlWithinBase("https://evil.com/x", "https://app.posthog.com")).toBe(false);
+    expect(isUrlWithinBase("http://app.posthog.com/x", "https://app.posthog.com")).toBe(false);
+    expect(isUrlWithinBase("https://app.posthog.com:8443/x", "https://app.posthog.com")).toBe(false);
+  });
+  it("normalizes default port + host case on both sides", () => {
+    expect(isUrlWithinBase("HTTPS://APP.PostHog.com:443/x", "https://app.posthog.com")).toBe(true);
+  });
+  it("enforces a segment-aligned path prefix when the base carries a path", () => {
+    expect(isUrlWithinBase("https://api.example.com/v2/x", "https://api.example.com/v2")).toBe(true);
+    expect(isUrlWithinBase("https://api.example.com/v2", "https://api.example.com/v2")).toBe(true);
+    expect(isUrlWithinBase("https://api.example.com/v2evil", "https://api.example.com/v2")).toBe(false);
+  });
+  it("fails closed on unparseable input", () => {
+    expect(isUrlWithinBase("not-a-url", "https://app.posthog.com")).toBe(false);
+    expect(isUrlWithinBase("https://app.posthog.com/x", "not-a-url")).toBe(false);
   });
 });
 
@@ -189,7 +325,7 @@ describe("GatecraftBroker", () => {
 describe("KEY INVARIANT: a provider object cannot read the raw secret", () => {
   it("forProvider() returns an object exposing proxyCall only -- resolve is structurally absent", async () => {
     const registry = new ProviderRegistry();
-    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"] });
+    registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"], baseUrl: "https://example.com" });
     const fakeFetch: typeof fetch = async () => new Response("{}", { status: 200 });
     const broker = new LocalBroker({ registry, env: { FAKE_API_KEY: SECRET }, fetchImpl: fakeFetch, log: () => {} });
 

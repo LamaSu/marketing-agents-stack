@@ -180,7 +180,8 @@ const SECRET = "shh-do-not-log-me-9f2c";
 
 function brokerWith(dpopSigner?: ReturnType<typeof createDpopSigner>) {
   const registry = new ProviderRegistry();
-  registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"] });
+  // #4: a secret-injecting provider must be bound to a base; the DPoP tests call example.com.
+  registry.register({ providerId: "fake", keyNames: ["FAKE_API_KEY"], baseUrl: "https://example.com" });
   const captured: { url: string; headers: Record<string, string> } = { url: "", headers: {} };
   const fetchImpl: typeof fetch = async (input, init) => {
     captured.url = input.toString();
