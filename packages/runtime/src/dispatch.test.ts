@@ -12,6 +12,7 @@ import type { MemoryRepo } from "@mstack/memory";
 
 import { dispatchDraft, assertApproved } from "./dispatch.js";
 import { LocalOutreachChannel } from "./channels.js";
+import { DraftStore } from "./draft-store.js";
 
 const now = "2026-07-20T00:00:00.000Z";
 
@@ -231,6 +232,39 @@ describe("dispatchDraft — guardrail #2: THE ONLY send path", () => {
       { refId: draft.id },
     );
     expect(Number(outcomeRows[0]?.c ?? -1)).toBe(1);
+  });
+
+  it("HARDENING (#2): refuses a draft whose content changed after approval (content-hash binding)", async () => {
+    const cbindDir = await mkdtemp(join(tmpdir(), "mstack-runtime-cbind-"));
+    const store = new DraftStore(memory, cbindDir);
+    let sends = 0;
+    const spyChannel: OutreachChannel = {
+      name: "spy",
+      kind: "email",
+      dispatch: async () => {
+        sends++;
+        throw new Error("should never be called");
+      },
+    };
+    try {
+      const saved = await store.save(pendingDraft({ id: "dr_cbind", body: "original body" }));
+      const approval = await store.approve(saved.id, "human"); // pins contentHash over "original body"
+      expect(approval.contentHash).toBeDefined();
+
+      // Swap the approved draft's content out from under the approval (status stays 'approved').
+      const approved = await memory.getDraft(saved.id);
+      if (!approved) throw new Error("precondition: approved draft should be persisted");
+      await memory.putDraft({ ...approved, body: "SWAPPED body no human approved" });
+
+      await expect(dispatchDraft(saved, approval, spyChannel, memory)).rejects.toThrow(
+        /content has changed since it was approved/,
+      );
+      expect(sends).toBe(0);
+      // the refused send must not have marked the draft dispatched.
+      expect((await memory.getDraft(saved.id))?.status).toBe("approved");
+    } finally {
+      await rm(cbindDir, { recursive: true, force: true });
+    }
   });
 });
 

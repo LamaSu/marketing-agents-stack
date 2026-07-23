@@ -26,6 +26,7 @@ import type { MemoryRepo } from "@mstack/memory";
 
 import { noopApproverNotifier } from "./approver-notifier.js";
 import type { ApproverNotifier } from "./approver-notifier.js";
+import { draftContentHash } from "./content-hash.js";
 
 const DEFAULT_DRAFTS_DIR = "./drafts";
 
@@ -113,11 +114,15 @@ export class DraftStore {
           "again would risk a duplicate send",
       );
     }
+    // Bind this approval to the CONTENT being approved (#2): the hash of the draft's
+    // dispatch-relevant fields as they are right now. dispatch.ts recomputes it against
+    // the persisted draft at send time and refuses if the content was swapped since.
     const approval = await this.#memory.appendApproval({
       id: newId("appr"),
       draftId,
       decision: "approve",
       actor,
+      contentHash: draftContentHash(draft),
       ts: nowIso(),
     });
     await this.#memory.setDraftStatus(draftId, "approved");

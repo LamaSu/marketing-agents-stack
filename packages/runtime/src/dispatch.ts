@@ -46,6 +46,8 @@ import type { Draft } from "@mstack/core";
 import type { OutreachChannel } from "@mstack/core";
 import type { MemoryRepo } from "@mstack/memory";
 
+import { draftContentHash } from "./content-hash.js";
+
 export interface DispatchOptions {
   /** injectable clock; tests only. */
   now?: () => string;
@@ -172,6 +174,18 @@ export async function assertDispatchable(
     throw new Error(
       `dispatchDraft: refused — the persisted Approval "${approval.id}" does not record an ` +
         `"approve" decision for draft "${persisted.id}"`,
+    );
+  }
+
+  // Content binding (#2): if the recorded Approval pinned the approved content, the
+  // persisted draft's CURRENT content must still match it. Otherwise the subject/body/
+  // channel/etc. was swapped AFTER approval and this send would deliver content no human
+  // approved. Uses the RECORDED contentHash (system of record), never the caller's copy.
+  // Approvals with no contentHash (older rows, review approvals) are unaffected.
+  if (recorded.contentHash !== undefined && draftContentHash(persisted) !== recorded.contentHash) {
+    throw new Error(
+      `dispatchDraft: refused — draft "${persisted.id}" content has changed since it was ` +
+        `approved (Approval "${approval.id}" is bound to different content); re-approval required`,
     );
   }
 

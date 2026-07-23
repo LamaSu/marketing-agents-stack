@@ -273,6 +273,13 @@ export const Approval = z.object({
   decision: ApprovalDecision,
   actor: z.string(),
   note: z.string().optional(),
+  /** OPTIONAL, backward-compatible content binding: sha256 of the approved draft's
+   *  dispatch-relevant content (subject/body/channel/refId/kind) at approval time.
+   *  When present, `dispatch.ts` refuses to send if the persisted draft's content no
+   *  longer matches — an approve-then-swap guard. Absent on pre-existing rows and on
+   *  non-draft (review) approvals, which remain valid. Computed by
+   *  `@mstack/runtime`'s `draftContentHash`. */
+  contentHash: z.string().optional(),
   ts: z.string(),
   prevHash: z.string(),
   hash: z.string(),
