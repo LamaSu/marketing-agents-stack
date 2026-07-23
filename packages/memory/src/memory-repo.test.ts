@@ -208,6 +208,32 @@ describe("MemoryRepo — DuckDB-backed compounding warehouse", () => {
     expect(await repo.verifyAuditChain()).toBe(false);
   });
 
+  it("hashes the canonical PARSED approval, so an input with an extra field still yields a verifiable chain (#12)", async () => {
+    // A caller passes a field the Approval schema does not define (e.g. from untrusted/
+    // deserialized input). It must be stripped BEFORE hashing — otherwise the stored row
+    // (extras stripped by Approval.parse) can never be recomputed to its own stored hash,
+    // permanently breaking verifyAuditChain.
+    await repo.appendApproval({
+      id: "ap1",
+      draftId: "dr1",
+      decision: "approve",
+      actor: "human",
+      ts: now,
+      extraneous: "stripped before hashing",
+    } as unknown as Parameters<MemoryRepo["appendApproval"]>[0]);
+    // a normal row chained off it — proves the linkage still holds through the stripped row.
+    await repo.appendApproval({ id: "ap2", draftId: "dr2", decision: "approve", actor: "human", ts: now });
+
+    expect(await repo.verifyAuditChain()).toBe(true);
+
+    // the extra field was stripped, not persisted.
+    const rows = await repo.query<{ data: string }>("SELECT data FROM approvals WHERE id = $id", {
+      id: "ap1",
+    });
+    const stored = JSON.parse(String(rows[0]?.data)) as Record<string, unknown>;
+    expect(stored.extraneous).toBeUndefined();
+  });
+
   it("canonicalJson is deterministic regardless of key order", () => {
     expect(canonicalJson({ b: 1, a: 2 })).toBe(canonicalJson({ a: 2, b: 1 }));
     expect(canonicalJson({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');

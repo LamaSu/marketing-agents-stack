@@ -466,9 +466,20 @@ export class MemoryRepo {
     const prevSeq = lastRow ? Number(lastRow.seq) : 0;
     const prevHash = lastRow ? String(lastRow.hash) : GENESIS_HASH;
 
-    const payload = { ...input, prevHash };
-    const hash = sha256Hex(prevHash + canonicalJson(payload));
-    const approval = Approval.parse({ ...payload, hash });
+    // Hash the CANONICAL, PARSED approval — exactly the bytes that will be
+    // stored — not the raw `input`. Parsing through the schema WITHOUT `hash`
+    // first strips any extra/stray field on `input` (including a stray
+    // `hash`/`prevHash`) and applies the server-set `prevHash`, so the invariant
+    // holds: what is hashed === what is stored === what `verifyAuditChain`
+    // recomputes (which hashes the stored row minus its own `hash`). Hashing the
+    // raw `input` instead let any extra field make the stored hash
+    // unrecomputable from the stored data and permanently break the chain.
+    // For a well-formed input with no extras this yields the byte-identical hash
+    // to before (the Approval schema sets no defaults), so pre-existing chains
+    // still verify unchanged.
+    const unhashed = Approval.omit({ hash: true }).parse({ ...input, prevHash });
+    const hash = sha256Hex(prevHash + canonicalJson(unhashed));
+    const approval = Approval.parse({ ...unhashed, hash });
 
     await this.conn.run(
       `INSERT INTO approvals (seq, id, ts, prev_hash, hash, data) VALUES ($seq, $id, $ts, $prevHash, $hash, $data)`,
