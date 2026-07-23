@@ -451,34 +451,39 @@ export class MemoryRepo {
 
   /**
    * ATOMIC conditional claim for the one send path (`@mstack/runtime`'s guardrail #2).
-   * Flips a draft `approved -> dispatched` in a SINGLE statement guarded on the CURRENT
-   * persisted status, and reports whether THIS call is the one that changed the row — so
-   * two concurrent dispatchers cannot both proceed to send. DuckDB serializes statements
-   * on the single connection, so only the first UPDATE sees `status='approved'`; the
-   * loser's `WHERE ... AND status='approved'` matches nothing and it gets `false`.
+   * Flips a draft `approved -> dispatching` (the IN-FLIGHT state) in a SINGLE statement guarded
+   * on the CURRENT persisted status, and reports whether THIS call is the one that changed the
+   * row — so two concurrent dispatchers cannot both proceed to send. DuckDB serializes statements
+   * on the single connection, so only the first UPDATE sees `status='approved'`; the loser's
+   * `WHERE ... AND status='approved'` matches nothing and it gets `false`.
    *
-   * Returns true iff this call won the claim (moved the row approved->dispatched). Updates
-   * BOTH the indexed `status` column and the `status` inside the JSON `data` blob, so
-   * `getDraft` (reads `data`) and column queries stay consistent. Unlike `setDraftStatus`
-   * this is CONDITIONAL (only from `approved`) and reports the outcome — that is what makes
-   * it safe as the pre-send gate.
+   * Returns true iff this call won the claim (moved the row approved->dispatching). Updates BOTH
+   * the indexed `status` column and the `status` inside the JSON `data` blob, so `getDraft` (reads
+   * `data`) and column queries stay consistent. Unlike `setDraftStatus` this is CONDITIONAL (only
+   * from `approved`) and reports the outcome — that is what makes it safe as the pre-send gate.
    *
-   * Fail-closed by design: a crash/throw AFTER a won claim leaves the draft `dispatched`,
-   * so an ordinary retry is refused (returns false) rather than risking a second external
-   * send. Relies on `UPDATE ... RETURNING` (DuckDB >= 0.8) to count the changed row —
-   * verified on the Spark build per docs/build-conventions.md.
+   * The winning caller then drives the rest of the state machine in `dispatchDraft`: on a
+   * successful channel send it advances `dispatching -> dispatched` and records the Outcome; if
+   * the channel THROWS it reverts `dispatching -> approved` so a legitimate retry can re-send (no
+   * permanent delivery loss). A crash AFTER a won claim but BEFORE either transition leaves the
+   * draft stuck in `dispatching`; `dispatchDraft`'s read-side gate refuses a FRESH dispatch of a
+   * `dispatching` draft (no double-send), and it then needs operator re-drive (a timeout-based
+   * reclaim of stuck `dispatching` rows is a documented follow-up, not implemented here).
+   *
+   * Relies on `UPDATE ... RETURNING` (DuckDB >= 0.8) to count the changed row — verified on the
+   * Spark build per docs/build-conventions.md.
    */
   async claimDraftForDispatch(id: string): Promise<boolean> {
     const existing = await this.getDraft(id);
     if (!existing || existing.status !== "approved") {
       return false;
     }
-    const dispatched: Draft = { ...existing, status: "dispatched" };
+    const dispatching: Draft = { ...existing, status: "dispatching" };
     const changed = await this.query<{ id: string }>(
-      `UPDATE drafts SET status = 'dispatched', data = $data
+      `UPDATE drafts SET status = 'dispatching', data = $data
          WHERE id = $id AND status = 'approved'
          RETURNING id`,
-      { id, data: JSON.stringify(dispatched) },
+      { id, data: JSON.stringify(dispatching) },
     );
     return changed.length > 0;
   }
