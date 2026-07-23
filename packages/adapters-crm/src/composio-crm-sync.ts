@@ -36,8 +36,24 @@
  * FAILS SAFE LIKE EVERY OTHER PUSH PATH HERE: a Composio action failure
  * degrades to a console.warn + no-op, the same contract as `httpCrmSync` — a
  * CRM push, via any transport, never throws and never breaks the caller.
+ *
+ * CRM-RECORD-ONLY BOUNDARY (cross-model audit finding #3): a Composio action
+ * slug is caller-configured, so nothing previously stopped this seam from
+ * being wired to e.g. `GMAIL_SEND_EMAIL` — a covert send path that bypasses
+ * the Draft/Approval gate (guardrail #2, docs/build-conventions.md). The
+ * `ComposioCrmSync` constructor now REFUSES (throws) any configured action
+ * that isn't a recognized CRM record update/upsert/create/log operation —
+ * see `assertCrmActionAllowed` below. This is a construction-time
+ * configuration check, deliberately NOT swallowed by `runAction`'s
+ * degrade-on-failure try/catch (that catch is for genuine runtime/Composio
+ * failures; a disallowed action is a wiring mistake and must fail loud).
+ *
+ * FINDING #11 (extra-field leak) ALSO CLOSED HERE: `runAction` now parses
+ * the incoming `Account`/`Decision`/`Outcome` through its zod schema before
+ * `mapArgs` ever sees it, stripping any extra runtime fields smuggled in via
+ * an `as any` cast upstream — the same projection `httpCrmSync` applies.
  */
-import type { Account, Decision, Outcome } from "@mstack/core";
+import { Account, Decision, Outcome } from "@mstack/core";
 import type { CrmSync } from "./crm-sync.js";
 
 /* ─────────────── the Composio surface this file depends on (structural) ─────────────── */
@@ -74,13 +90,98 @@ export interface ComposioLike {
 
 /* ─────────────────────────── per-push-type action config ─────────────────────────── */
 
+/**
+ * Shared shape of one action config: the slug, its arg-mapper, and the
+ * (default-off) escape hatch from the CRM-record-only allowlist below.
+ */
+interface ActionConfig<T> {
+  action: string;
+  mapArgs: (arg: T) => Record<string, unknown>;
+  /** Explicit, per-action opt-out of the default CRM-record allowlist. Only
+   *  set this if `action` is a genuine CRM record operation the default
+   *  allowlist doesn't recognize (see `assertCrmActionAllowed`'s error
+   *  message for the recognized verb/noun sets) — NEVER for a send/message
+   *  action, which must go through `OutreachChannel` + `Approval` instead.
+   *  Setting this takes the action OFF this seam's enforced safety boundary;
+   *  the deployer is entirely responsible for what it actually does. */
+  dangerouslyAllowAnyAction?: boolean;
+}
+
 export interface ComposioCrmSyncActions {
   /** Composio action slug + arg-mapper for a score push. Omit to no-op that method. */
-  score?: { action: string; mapArgs: (account: Account) => Record<string, unknown> };
+  score?: ActionConfig<Account>;
   /** Composio action slug + arg-mapper for a decision push. Omit to no-op that method. */
-  decision?: { action: string; mapArgs: (decision: Decision) => Record<string, unknown> };
+  decision?: ActionConfig<Decision>;
   /** Composio action slug + arg-mapper for an outcome push. Omit to no-op that method. */
-  outcome?: { action: string; mapArgs: (outcome: Outcome) => Record<string, unknown> };
+  outcome?: ActionConfig<Outcome>;
+}
+
+/* ─────────── CRM-record-only action allowlist (audit finding #3) ─────────── */
+
+/** Verbs that, combined with a record noun below, describe a safe "push our
+ *  derived data onto a record" operation — the only thing this seam exists
+ *  to do. Matched as whole `_`-delimited tokens of the action slug. */
+const SAFE_ACTION_VERBS = new Set(["UPDATE", "UPSERT", "CREATE", "LOG", "SET", "ADD"]);
+
+/** Nouns that anchor a safe verb to "a CRM record", as opposed to a human
+ *  channel/inbox. Requiring BOTH a safe verb AND a record noun is what lets
+ *  e.g. `HUBSPOT_LOG_ACTIVITY` (logging onto CRM activity history — exactly
+ *  what `pushOutcome` is for) stay allowed while still rejecting bare verbs
+ *  with no record semantics. */
+const CRM_RECORD_NOUNS = new Set([
+  "RECORD", "CONTACT", "LEAD", "DEAL", "COMPANY", "ACCOUNT", "OPPORTUNITY",
+  "ACTIVITY", "NOTE", "ENGAGEMENT", "EVENT", "TASK", "PROPERTY", "FIELD",
+  "OBJECT", "CUSTOMER",
+]);
+
+/** Tokens that mark a slug as a send/message/notify-style action — content
+ *  reaching a human. ALWAYS refused, regardless of any safe verb/noun also
+ *  present (e.g. a hypothetical `SEND_EMAIL_TO_CONTACT` is still refused) —
+ *  these must go through `OutreachChannel` + `Approval`, never this seam. */
+const SEND_STYLE_ACTION_TOKENS = new Set([
+  "SEND", "EMAIL", "MESSAGE", "SMS", "MMS", "NOTIFY", "NOTIFICATION", "POST",
+  "PUBLISH", "INVITE", "SHARE", "REPLY", "DM", "CHAT", "CALL", "WEBHOOK",
+  "BROADCAST", "CAMPAIGN", "PUSH", "TEXT",
+]);
+
+/** Split a Composio action slug into uppercase `_`/non-alnum-delimited tokens. */
+function actionTokens(action: string): string[] {
+  return action.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+}
+
+/**
+ * Enforce the CRM-record-only boundary for one configured action. Called at
+ * CONSTRUCTION time (see the `ComposioCrmSync` constructor) — deliberately
+ * OUTSIDE `runAction`'s try/catch, because a disallowed action is a
+ * configuration error, not a transient runtime failure, and must fail loud
+ * rather than silently degrade to a no-op like a real Composio outage would.
+ */
+function assertCrmActionAllowed(
+  pushType: "score" | "decision" | "outcome",
+  cfg: { action: string; dangerouslyAllowAnyAction?: boolean } | undefined,
+): void {
+  if (!cfg) return; // not configured for this push type -- nothing to check
+  const tokens = actionTokens(cfg.action);
+  const isSendStyle = tokens.some((t) => SEND_STYLE_ACTION_TOKENS.has(t));
+  const isDefaultAllowed =
+    !isSendStyle &&
+    tokens.some((t) => SAFE_ACTION_VERBS.has(t)) &&
+    tokens.some((t) => CRM_RECORD_NOUNS.has(t));
+  if (isDefaultAllowed) return;
+  if (cfg.dangerouslyAllowAnyAction) return; // explicit, documented opt-out -- see ActionConfig's doc comment
+  throw new Error(
+    `[@mstack/adapters-crm] composioCrmSync: refusing to configure the "${pushType}" push with Composio action ` +
+      `"${cfg.action}" — this seam pushes OUR derived score/decision/outcome onto OUR OWN CRM record and must ` +
+      `stay restricted to CRM record update/upsert/create/log operations (default allowlist: a verb from ` +
+      `[${[...SAFE_ACTION_VERBS].join(", ")}] combined with a noun from [${[...CRM_RECORD_NOUNS].join(", ")}]). ` +
+      (isSendStyle
+        ? `"${cfg.action}" looks like a send/message/notify action — that must go through OutreachChannel + ` +
+          `Approval (docs/build-conventions.md guardrail #2), never this seam.`
+        : `"${cfg.action}" does not match the default CRM-record allowlist.`) +
+      ` If this is genuinely a CRM record operation the default allowlist doesn't recognize, set ` +
+      `\`dangerouslyAllowAnyAction: true\` on this action's config — doing so takes it OFF this seam's enforced ` +
+      `boundary and is entirely the deployer's responsibility to keep pointed at a CRM record, never a send.`,
+  );
 }
 
 export interface ComposioCrmSyncOptions {
@@ -97,15 +198,21 @@ async function runAction<T>(
   client: ComposioLike,
   label: string,
   cfg: { action: string; mapArgs: (arg: T) => Record<string, unknown> } | undefined,
+  /** the arg's zod schema — parsed INSIDE the try block below, before
+   *  `mapArgs` ever sees `arg`, so any extra runtime fields smuggled onto
+   *  `arg` (e.g. via an upstream `as any` cast) are stripped before they can
+   *  reach `mapArgs`/the CRM (audit finding #11, same fix as `httpCrmSync`). */
+  schema: { parse(value: unknown): T },
   arg: T,
   entityId: string | undefined,
   connectedAccountId: string | undefined,
 ): Promise<void> {
   if (!cfg) return; // no action configured for this push type -- silent no-op, like noopCrmSync
   try {
+    const validated = schema.parse(arg);
     const result = await client.execute({
       action: cfg.action,
-      params: cfg.mapArgs(arg),
+      params: cfg.mapArgs(validated),
       entityId,
       connectedAccountId,
     });
@@ -133,6 +240,12 @@ export class ComposioCrmSync implements CrmSync {
   readonly #connectedAccountId?: string;
 
   constructor(client: ComposioLike, opts: ComposioCrmSyncOptions) {
+    // CRM-record-only boundary (finding #3): validated at construction time,
+    // loud and immediate — see `assertCrmActionAllowed`'s doc comment for why
+    // this must NOT live inside `runAction`'s degrade-on-failure try/catch.
+    assertCrmActionAllowed("score", opts.actions.score);
+    assertCrmActionAllowed("decision", opts.actions.decision);
+    assertCrmActionAllowed("outcome", opts.actions.outcome);
     this.#client = client;
     this.#actions = opts.actions;
     this.name = opts.name ?? "composio";
@@ -141,7 +254,15 @@ export class ComposioCrmSync implements CrmSync {
   }
 
   async pushScore(account: Account): Promise<void> {
-    await runAction(this.#client, "score", this.#actions.score, account, this.#entityId, this.#connectedAccountId);
+    await runAction(
+      this.#client,
+      "score",
+      this.#actions.score,
+      Account,
+      account,
+      this.#entityId,
+      this.#connectedAccountId,
+    );
   }
 
   async pushDecision(decision: Decision): Promise<void> {
@@ -149,6 +270,7 @@ export class ComposioCrmSync implements CrmSync {
       this.#client,
       "decision",
       this.#actions.decision,
+      Decision,
       decision,
       this.#entityId,
       this.#connectedAccountId,
@@ -156,7 +278,15 @@ export class ComposioCrmSync implements CrmSync {
   }
 
   async pushOutcome(outcome: Outcome): Promise<void> {
-    await runAction(this.#client, "outcome", this.#actions.outcome, outcome, this.#entityId, this.#connectedAccountId);
+    await runAction(
+      this.#client,
+      "outcome",
+      this.#actions.outcome,
+      Outcome,
+      outcome,
+      this.#entityId,
+      this.#connectedAccountId,
+    );
   }
 }
 

@@ -133,6 +133,115 @@ describe("ComposioCrmSync — pushes via configured Composio actions", () => {
   });
 });
 
+describe("ComposioCrmSync — CRM-record-only action allowlist (audit finding #3)", () => {
+  it("refuses to construct when a send-style action is configured (e.g. GMAIL_SEND_EMAIL)", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { score: { action: "GMAIL_SEND_EMAIL", mapArgs: () => ({}) } },
+        }),
+    ).toThrow(/refusing to configure/i);
+  });
+
+  it("allows a HUBSPOT_UPDATE_CONTACT-style record-update action", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { score: { action: "HUBSPOT_UPDATE_CONTACT", mapArgs: () => ({}) } },
+        }),
+    ).not.toThrow();
+  });
+
+  it("checks decision and outcome independently too (not just score)", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { decision: { action: "SLACK_SEND_MESSAGE", mapArgs: () => ({}) } },
+        }),
+    ).toThrow(/refusing to configure/i);
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { outcome: { action: "TWILIO_SEND_SMS", mapArgs: () => ({}) } },
+        }),
+    ).toThrow(/refusing to configure/i);
+    // record-update/upsert/log ops on all three push types: allowed
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: {
+            score: { action: "HUBSPOT_UPSERT_CONTACT", mapArgs: () => ({}) },
+            decision: { action: "SALESFORCE_UPDATE_RECORD", mapArgs: () => ({}) },
+            outcome: { action: "HUBSPOT_LOG_ACTIVITY", mapArgs: () => ({}) },
+          },
+        }),
+    ).not.toThrow();
+  });
+
+  it("rejects a send-style action even when a record noun is also present in the slug (blocklist wins)", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: { score: { action: "HUBSPOT_SEND_EMAIL_TO_CONTACT", mapArgs: () => ({}) } },
+        }),
+    ).toThrow(/send\/message\/notify/i);
+  });
+
+  it("respects an explicit per-action dangerouslyAllowAnyAction opt-out for a non-default action", () => {
+    const { client } = fakeComposio();
+    expect(
+      () =>
+        new ComposioCrmSync(client, {
+          actions: {
+            score: {
+              action: "SOME_CUSTOM_CRM_OP",
+              mapArgs: () => ({}),
+              dangerouslyAllowAnyAction: true,
+            },
+          },
+        }),
+    ).not.toThrow();
+  });
+});
+
+describe("ComposioCrmSync — strips extra runtime fields before mapArgs sees them (audit finding #11)", () => {
+  it("pushDecision never exposes fields beyond the real Decision schema to mapArgs, even if smuggled on via `as`", async () => {
+    const { client, execute } = fakeComposio();
+    let seenKeys: string[] = [];
+    const sync = new ComposioCrmSync(client, {
+      actions: {
+        decision: {
+          action: "SALESFORCE_UPDATE_RECORD",
+          mapArgs: (d) => {
+            seenKeys = Object.keys(d);
+            return { rationale: d.rationale };
+          },
+        },
+      },
+    });
+    const smuggled = {
+      ...decision(),
+      recipient: "victim@example.com",
+      subject: "hi",
+      body: "click here, unrelated to any Decision field",
+    } as unknown as Decision;
+
+    await sync.pushDecision(smuggled);
+
+    expect(seenKeys).not.toContain("recipient");
+    expect(seenKeys).not.toContain("subject");
+    expect(seenKeys).not.toContain("body");
+    expect(seenKeys).toContain("rationale"); // the real field is still there -- this strips, doesn't break
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({ params: { rationale: "strong ICP fit, active buying committee" } }),
+    );
+  });
+});
+
 describe("ComposioCrmSync — degrades gracefully, never throws", () => {
   it("resolves (not rejects) when Composio reports successful: false, and warns once", async () => {
     const { client, execute } = fakeComposio({ successful: false, error: "rate limited" });
