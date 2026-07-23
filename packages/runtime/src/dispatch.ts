@@ -202,11 +202,12 @@ export async function assertDispatchable(
 }
 
 /**
- * THE ONLY PATH FROM A `Draft` TO `dispatched` (guardrail #2). Refuses any draft/approval pair
- * that doesn't check out against the SYSTEM OF RECORD (`assertDispatchable`, above) — checked
- * before the channel is ever called. On success: dispatch via the channel using the PERSISTED
- * draft, mark the draft `dispatched` in `memory`, then build + persist + return the `Outcome` row
- * (`refType:'draft'`, `result:'sent'`).
+ * The only path from a `Draft` to `dispatched` in the normal flow (guardrail #2). Refuses any
+ * draft/approval pair that doesn't check out against the SYSTEM OF RECORD (`assertDispatchable`,
+ * above) — checked before the channel is ever called. On success: ATOMICALLY claim the draft
+ * `approved -> dispatched` (the winning caller only), send via the channel using the pre-claim
+ * PERSISTED draft, then build + persist + return the `Outcome` row (`refType:'draft'`,
+ * `result:'sent'`).
  */
 export async function dispatchDraft(
   draft: Draft,
