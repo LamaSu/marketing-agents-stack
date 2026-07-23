@@ -495,11 +495,49 @@ export class MemoryRepo {
     return approval;
   }
 
-  /** Recomputes the whole chain from row 1 and returns false on the first mismatch
-   *  (broken linkage, tampered payload, or a row that no longer parses as an Approval). */
-  async verifyAuditChain(): Promise<boolean> {
+  /**
+   * Terminal anchor of the audit chain: the row `count` and the `hash` of the
+   * newest (highest-`seq`) row — `{ count: 0, headHash: GENESIS_HASH }` for an
+   * empty chain. Returned so an EXTERNAL monitor (or the halo export) can PIN
+   * the head now and detect tail-truncation later.
+   *
+   * WHY this exists — an honest limitation of the chain: `verifyAuditChain()`
+   * recomputes from row 1 and validates whatever rows remain, so deleting the
+   * NEWEST rows leaves a still-internally-consistent prefix that the check keeps
+   * accepting — tail deletion is invisible to the chain alone. Detecting it needs
+   * an external reference point: record `auditHead()` now and compare later
+   * (directly, or via `verifyAuditChain(pinnedHead)`). A drop in `count` or a
+   * changed `headHash` reveals a truncation the chain cannot.
+   */
+  async auditHead(): Promise<{ count: number; headHash: string }> {
+    const countRows = await this.query<{ c: unknown }>("SELECT COUNT(*) AS c FROM approvals");
+    const count = Number(countRows[0]?.c ?? 0);
+    if (count === 0) {
+      return { count: 0, headHash: GENESIS_HASH };
+    }
+    const headRows = await this.query<{ hash: string }>(
+      "SELECT hash FROM approvals ORDER BY seq DESC LIMIT 1",
+    );
+    const headHash = headRows[0] ? String(headRows[0].hash) : GENESIS_HASH;
+    return { count, headHash };
+  }
+
+  /**
+   * Recomputes the whole chain from row 1 and returns false on the first mismatch
+   * (broken linkage, tampered payload, or a row that no longer parses as an Approval).
+   *
+   * LIMITATION (documented, not fully fixable from the chain alone): this validates
+   * the rows that are PRESENT, so on its own it cannot detect deletion of the NEWEST
+   * rows — a truncated prefix stays internally consistent. Pass `expected` (a head
+   * pinned earlier via `auditHead()`) to close that gap: the row `count` and terminal
+   * `headHash` must then also match, so a dropped or forged-shorter tail is caught.
+   * Omitting `expected` preserves the original prefix-only behavior for existing callers.
+   */
+  async verifyAuditChain(expected?: { count: number; headHash: string }): Promise<boolean> {
     const rows = await this.query<{ data: string }>("SELECT data FROM approvals ORDER BY seq ASC");
     let expectedPrev = GENESIS_HASH;
+    let terminalHash = GENESIS_HASH;
+    let count = 0;
     for (const row of rows) {
       let approval: Approval;
       try {
@@ -511,6 +549,12 @@ export class MemoryRepo {
       const { hash, ...rest } = approval;
       if (sha256Hex(approval.prevHash + canonicalJson(rest)) !== hash) return false;
       expectedPrev = hash;
+      terminalHash = hash;
+      count += 1;
+    }
+    if (expected) {
+      if (count !== expected.count) return false;
+      if (terminalHash !== expected.headHash) return false;
     }
     return true;
   }

@@ -234,6 +234,27 @@ describe("MemoryRepo — DuckDB-backed compounding warehouse", () => {
     expect(stored.extraneous).toBeUndefined();
   });
 
+  it("auditHead pins the chain head; verifyAuditChain(expected) detects tail-truncation the chain alone cannot (#8)", async () => {
+    await repo.appendApproval({ id: "ap1", draftId: "dr1", decision: "approve", actor: "human", ts: now });
+    const a2 = await repo.appendApproval({ id: "ap2", draftId: "dr2", decision: "approve", actor: "human", ts: now });
+
+    const head = await repo.auditHead();
+    expect(head.count).toBe(2);
+    expect(head.headHash).toBe(a2.hash);
+    expect(await repo.verifyAuditChain(head)).toBe(true);
+
+    // Delete the NEWEST row (tail truncation). The surviving prefix is still internally
+    // consistent, so the plain chain check cannot see it...
+    await repo.query("DELETE FROM approvals WHERE id = $id", { id: "ap2" });
+    expect(await repo.verifyAuditChain()).toBe(true);
+    // ...but comparing against the pinned head catches it (count dropped, head moved).
+    expect(await repo.verifyAuditChain(head)).toBe(false);
+
+    // empty chain -> genesis head, count 0.
+    await repo.query("DELETE FROM approvals");
+    expect(await repo.auditHead()).toEqual({ count: 0, headHash: GENESIS_HASH });
+  });
+
   it("canonicalJson is deterministic regardless of key order", () => {
     expect(canonicalJson({ b: 1, a: 2 })).toBe(canonicalJson({ a: 2, b: 1 }));
     expect(canonicalJson({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
