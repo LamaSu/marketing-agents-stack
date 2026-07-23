@@ -3,163 +3,168 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SignalSphere AI — Autonomous Activation Console</title>
-    <meta name="description" content="ML scoring + agentic swarm + draft-first human approval, live over your own account-intelligence backend." />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>" />
-    <link rel="stylesheet" href="/style.css" />
+    <title>Console · Marketing Agents Stack</title>
+    <meta
+      name="description"
+      content="Offline-first GTM control bench: funnel, ranked accounts, ingested signals, and the human approval gate over drafted outreach."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='18' fill='%2314171C'/><circle cx='50' cy='50' r='26' fill='none' stroke='%23B7791F' stroke-width='9'/></svg>"
+    />
+    <link rel="stylesheet" href="/app.css" />
     <script src="/app.js" defer></script>
   </head>
   <body>
-    <!-- ── TOP BAR ─────────────────────────────────────────────────────── -->
+    <a class="skip-link" href="#main">Skip to content</a>
+
     <header class="topbar">
       <div class="brand">
         <span class="brand-mark" aria-hidden="true"></span>
         <div class="brand-text">
-          <div class="brand-title">SignalSphere&nbsp;AI</div>
-          <div class="brand-sub">Autonomous Activation Console</div>
-        </div>
-        <span id="mode-pill" class="mode-pill" title="offline = no ANTHROPIC_API_KEY">…</span>
-      </div>
-
-      <div class="best-practice" role="note">
-        <span class="bp-tag">Industry Best Practice</span>
-        Pairing ML predictive models (scoring) with Agentic AI (reasoning &amp; action) yields
-        <strong>3.4× higher conversion</strong>.
-      </div>
-
-      <div class="stats" id="stats">
-        <div class="stat">
-          <div class="stat-label">Active Agents</div>
-          <div class="stat-value" id="stat-agents">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Autonomous Runs</div>
-          <div class="stat-value" id="stat-runs">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Pipeline Velocity</div>
-          <div class="stat-value pos" id="stat-velocity">—</div>
+          <p class="brand-title">Console</p>
+          <p class="brand-sub">Marketing Agents Stack — GTM control bench</p>
         </div>
       </div>
-
-      <div class="mode-toggle" id="mode-toggle" role="tablist" aria-label="Agent autonomy mode">
-        <button class="mt-opt is-active" data-mode="copilot" role="tab" aria-selected="true">Copilot</button>
-        <button class="mt-opt" data-mode="autopilot" role="tab" aria-selected="false">Autopilot</button>
+      <div class="topbar-right">
+        <span id="mode-pill" class="mode-pill" title="offline = no ANTHROPIC_API_KEY · live = Claude swarm">mode …</span>
+        <div class="agent-toggle" id="agent-toggle" role="tablist" aria-label="Agent autonomy mode">
+          <button class="at-opt is-active" data-mode="copilot" role="tab" aria-selected="true" type="button">Copilot</button>
+          <button class="at-opt" data-mode="autopilot" role="tab" aria-selected="false" type="button">Autopilot</button>
+        </div>
       </div>
     </header>
 
-    <!-- ── FOUR PANELS ─────────────────────────────────────────────────── -->
-    <main class="grid">
-      <!-- 1 · Ingested Signal Stream -->
-      <section class="panel" id="panel-signals">
-        <div class="panel-head">
-          <span class="panel-icon sig" aria-hidden="true"></span>
-          <div>
-            <h2>Snowflake Data Layer</h2>
-            <p class="panel-sub">Ingested Signal Stream <span class="live-dot" title="streaming"></span></p>
-          </div>
-        </div>
-        <div class="panel-body" id="signal-stream" aria-live="polite"></div>
-      </section>
+    <div class="bench">
+      <nav class="rail" aria-label="Console sections">
+        <a href="#funnel">01 · Funnel</a>
+        <a href="#signals">02 · Signals</a>
+        <a href="#accounts">03 · Accounts</a>
+        <a href="#drafts">04 · Drafts <span id="rail-draft-count" class="rail-count" aria-live="polite"></span></a>
+      </nav>
 
-      <!-- 2 · ML Scoring Engine -->
-      <section class="panel" id="panel-scoring">
-        <div class="panel-head">
-          <span class="panel-icon score" aria-hidden="true"></span>
-          <div>
-            <h2>ML Scoring Engine</h2>
-            <p class="panel-sub">Ranked ICP accounts — click to activate</p>
+      <main id="main" class="content">
+        <!-- 01 · FUNNEL (hero) -->
+        <section id="funnel" class="zone" aria-labelledby="funnel-h">
+          <div class="zone-head">
+            <h1 id="funnel-h">Funnel</h1>
+            <p class="zone-sub">Signal → decision → action, current warehouse totals.</p>
           </div>
-        </div>
-        <div class="panel-body" id="account-list"></div>
-      </section>
 
-      <!-- 3 · Agentic Orchestration Hub -->
-      <section class="panel" id="panel-hub">
-        <div class="panel-head">
-          <span class="panel-icon hub" aria-hidden="true"></span>
-          <div>
-            <h2>Agentic Orchestration Hub</h2>
-            <p class="panel-sub">Active specialized workers</p>
-          </div>
-        </div>
-        <div class="panel-body">
-          <div class="workers" id="workers">
-            <div class="worker" data-worker="sdr">
-              <span class="w-dot"></span>
-              <div class="w-name">SDR&nbsp;Researcher</div>
-              <div class="w-role">reads signal tables</div>
+          <div class="chips" id="system-chips">
+            <div class="chip">
+              <span class="chip-label">Active agents</span>
+              <span class="chip-value" id="chip-agents">—</span>
             </div>
-            <div class="worker" data-worker="copy">
-              <span class="w-dot"></span>
-              <div class="w-name">Copywriter&nbsp;AI</div>
-              <div class="w-role">drafts the sequence</div>
+            <div class="chip">
+              <span class="chip-label">Autonomous runs</span>
+              <span class="chip-value" id="chip-runs">—</span>
             </div>
-            <div class="worker" data-worker="router">
-              <span class="w-dot"></span>
-              <div class="w-name">GTM&nbsp;Router</div>
-              <div class="w-role">picks next-best-action</div>
+            <div class="chip">
+              <span class="chip-label">Pipeline velocity</span>
+              <span class="chip-value" id="chip-velocity">—</span>
             </div>
           </div>
-          <div class="log-head">Swarm Reasoning Engine</div>
-          <div class="reasoning" id="reasoning"></div>
-        </div>
-      </section>
 
-      <!-- 4 · Resolution & Action Studio -->
-      <section class="panel" id="panel-studio">
-        <div class="panel-head">
-          <span class="panel-icon target" aria-hidden="true"></span>
-          <div>
-            <h2>Resolution &amp; Action Studio</h2>
-            <p class="panel-sub">Target insight console</p>
+          <div class="funnel-flow" id="funnel-flow" role="group" aria-label="Funnel stages, current warehouse totals">
+            <p class="empty-invite">Loading…</p>
           </div>
-        </div>
-        <div class="panel-body" id="studio">
-          <div class="studio-empty" id="studio-empty">Select an account to activate the swarm…</div>
-          <div class="studio-content" id="studio-content" hidden>
-            <div class="target-head">
+          <p class="funnel-note">Conversion = stage ÷ previous stage, from live warehouse counts.</p>
+        </section>
+
+        <!-- 02 · SIGNALS -->
+        <section id="signals" class="zone" aria-labelledby="signals-h">
+          <div class="zone-head">
+            <h2 id="signals-h">Signals</h2>
+            <p class="zone-sub">Most recent ingested events, newest first.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger">
+              <caption class="sr-only">Recent ingested signals</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Source</th>
+                  <th scope="col">Kind</th>
+                  <th scope="col">Actor</th>
+                  <th scope="col">Action</th>
+                  <th scope="col">Time</th>
+                </tr>
+              </thead>
+              <tbody id="signals-body">
+                <tr>
+                  <td colspan="5" class="empty-row">Loading…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 03 · ACCOUNTS -->
+        <section id="accounts" class="zone" aria-labelledby="accounts-h">
+          <div class="zone-head">
+            <h2 id="accounts-h">Accounts</h2>
+            <p class="zone-sub">Ranked by ICP fit. Activate to run the swarm and draft outreach.</p>
+          </div>
+          <div class="table-wrap">
+            <table class="ledger">
+              <caption class="sr-only">Ranked accounts</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Domain</th>
+                  <th scope="col">Name</th>
+                  <th scope="col">Score</th>
+                  <th scope="col">Tier</th>
+                  <th scope="col">Signals</th>
+                  <th scope="col"><span class="sr-only">Action</span></th>
+                </tr>
+              </thead>
+              <tbody id="accounts-body">
+                <tr>
+                  <td colspan="6" class="empty-row">Loading…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="activation-result" id="activation-result" hidden aria-live="polite">
+            <div class="ar-head">
               <div>
-                <div class="target-name" id="target-name">—</div>
-                <div class="target-domain" id="target-domain">—</div>
+                <p class="ar-eyebrow">Latest activation</p>
+                <h3 id="ar-domain">—</h3>
               </div>
-              <div class="target-score">
-                <span class="score-badge" id="target-score">—</span>
-                <span class="tier-chip" id="target-tier">—</span>
-              </div>
-            </div>
-
-            <div class="studio-section">
-              <div class="section-title">Buying-Group Persona Heatmap</div>
-              <div class="heatmap" id="heatmap"></div>
-            </div>
-
-            <div class="studio-section">
-              <div class="section-title">Buying-Group Committee</div>
-              <div class="committee" id="committee"></div>
-            </div>
-
-            <div class="studio-section">
-              <div class="section-title">Multi-Touch Activity Timeline</div>
-              <div class="timeline-scroll"><div class="timeline" id="timeline"></div></div>
-            </div>
-
-            <div class="studio-section">
-              <div class="section-title">Agentic Copywriter Sequence</div>
-              <div class="draft-card">
-                <div class="draft-subject" id="draft-subject">—</div>
-                <pre class="draft-body" id="draft-body">—</pre>
+              <div class="ar-badges">
+                <span class="mono-chip" id="ar-score">—</span>
+                <span class="tier-chip" id="ar-tier">—</span>
               </div>
             </div>
-
-            <div class="approval-gate" id="approval-gate">
-              <div class="gate-banner" id="gate-banner">Awaiting human validation</div>
-              <button class="approve-btn" id="approve-btn">Approve &amp; dispatch</button>
-              <p class="gate-note" id="gate-note"></p>
+            <p class="ar-rationale" id="ar-rationale"></p>
+            <p class="ar-meta" id="ar-meta"></p>
+            <div class="ar-nba" id="ar-nba"></div>
+            <div class="ar-draft">
+              <div class="ar-draft-subject" id="ar-draft-subject"></div>
+              <p class="ar-draft-body" id="ar-draft-body"></p>
             </div>
+            <p class="ar-hint">Now awaiting your approval in <a href="#drafts">Drafts</a>.</p>
           </div>
-        </div>
-      </section>
-    </main>
+        </section>
+
+        <!-- 04 · DRAFTS -->
+        <section id="drafts" class="zone" aria-labelledby="drafts-h">
+          <div class="zone-head">
+            <h2 id="drafts-h">Drafts awaiting approval</h2>
+            <p class="zone-sub">Nothing sends itself. Every draft below waits for you.</p>
+          </div>
+          <div class="gate-list" id="drafts-list">
+            <p class="empty-invite">Loading…</p>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <p class="toast" id="toast" role="status" aria-live="polite" hidden></p>
+
+    <noscript>
+      <div class="noscript-banner">This console reads its data live from the local API — enable JavaScript to use it.</div>
+    </noscript>
   </body>
 </html>
