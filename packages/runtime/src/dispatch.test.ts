@@ -5,12 +5,13 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { Approval, Draft, GENESIS_HASH } from "@mstack/core";
+import { Approval, Draft, GENESIS_HASH, Outcome, newId } from "@mstack/core";
 import type { OutreachChannel } from "@mstack/core";
 import { openMemory } from "@mstack/memory";
 import type { MemoryRepo } from "@mstack/memory";
 
 import { dispatchDraft, assertApproved } from "./dispatch.js";
+import { draftContentHash } from "./content-hash.js";
 import { LocalOutreachChannel } from "./channels.js";
 import { DraftStore } from "./draft-store.js";
 
@@ -138,6 +139,7 @@ describe("dispatchDraft — guardrail #2: THE ONLY send path", () => {
       draftId: draft.id,
       decision: "approve",
       actor: "human",
+      contentHash: draftContentHash(draft),
       ts: now,
     });
 
@@ -198,6 +200,7 @@ describe("dispatchDraft — guardrail #2: THE ONLY send path", () => {
       draftId: draft.id,
       decision: "approve",
       actor: "human",
+      contentHash: draftContentHash(draft),
       ts: now,
     });
 
@@ -267,7 +270,7 @@ describe("dispatchDraft — guardrail #2: THE ONLY send path", () => {
     }
   });
 
-  it("HARDENING (#7): the atomic claim runs BEFORE the send, so a channel failure can't be retried into a double-send", async () => {
+  it("REGRESSION (#1): a channel failure reverts the draft to 'approved' (no Outcome), and a retry CAN send", async () => {
     const draft = pendingDraft({ status: "approved" });
     await memory.putDraft(draft);
     const approval = await memory.appendApproval({
@@ -275,33 +278,160 @@ describe("dispatchDraft — guardrail #2: THE ONLY send path", () => {
       draftId: draft.id,
       decision: "approve",
       actor: "human",
+      contentHash: draftContentHash(draft),
       ts: now,
     });
 
+    // A channel that THROWS on the first call (transient failure) and succeeds on the second.
     let sends = 0;
-    const flakyChannel: OutreachChannel = {
+    const flakyThenOk: OutreachChannel = {
       name: "flaky",
       kind: "email",
-      dispatch: async () => {
+      dispatch: async (d, a) => {
         sends++;
-        throw new Error("transient channel failure after send");
+        if (sends === 1) throw new Error("transient channel failure");
+        assertApproved(d, a); // mirror a real channel's defensive re-check on the retry
+        return Outcome.parse({ id: newId("out"), refType: "draft", refId: d.id, result: "sent", ts: now });
       },
     };
 
-    // first attempt: the claim wins, the channel IS called (sends -> 1) but throws.
-    await expect(dispatchDraft(draft, approval, flakyChannel, memory)).rejects.toThrow(
+    // First attempt: the claim wins, the channel is called (sends -> 1) and throws. The draft must
+    // REVERT to 'approved' (NOT stick at 'dispatched'), and NO Outcome may be recorded — nothing
+    // was actually sent. This is the regression: the old code left it falsely 'dispatched' here.
+    await expect(dispatchDraft(draft, approval, flakyThenOk, memory)).rejects.toThrow(
       /transient channel failure/,
     );
     expect(sends).toBe(1);
-    // the draft is already claimed 'dispatched' (fail-closed: claim precedes the send).
-    expect((await memory.getDraft(draft.id))?.status).toBe("dispatched");
-
-    // an ordinary retry with the SAME (already-claimed) draft refuses WITHOUT calling the
-    // channel again — no second send, no duplicate outbox record.
-    await expect(dispatchDraft(draft, approval, flakyChannel, memory)).rejects.toThrow(
-      /already dispatched/,
+    expect((await memory.getDraft(draft.id))?.status).toBe("approved"); // reverted => retryable
+    const afterFail = await memory.query<{ c: number | bigint }>(
+      "SELECT COUNT(*) as c FROM outcomes WHERE ref_id = $refId",
+      { refId: draft.id },
     );
-    expect(sends).toBe(1); // still 1 — the retry did not re-send
+    expect(Number(afterFail[0]?.c ?? -1)).toBe(0); // no Outcome — the send did not happen
+
+    // A legitimate RETRY with the SAME (still-valid) approval now succeeds: the draft is 'approved'
+    // again, the claim wins, the channel sends, and exactly one Outcome is recorded.
+    const outcome = await dispatchDraft(draft, approval, flakyThenOk, memory);
+    expect(outcome.result).toBe("sent");
+    expect(sends).toBe(2);
+    expect((await memory.getDraft(draft.id))?.status).toBe("dispatched");
+    const afterRetry = await memory.query<{ c: number | bigint }>(
+      "SELECT COUNT(*) as c FROM outcomes WHERE ref_id = $refId",
+      { refId: draft.id },
+    );
+    expect(Number(afterRetry[0]?.c ?? -1)).toBe(1);
+  });
+
+  it("REGRESSION (#1): a REAL concurrent race (Promise.all of two dispatchDraft) sends exactly once", async () => {
+    const draft = pendingDraft({ status: "approved" });
+    await memory.putDraft(draft);
+    const approval = await memory.appendApproval({
+      id: "appr_race",
+      draftId: draft.id,
+      decision: "approve",
+      actor: "human",
+      contentHash: draftContentHash(draft),
+      ts: now,
+    });
+
+    // Count actual channel sends across BOTH concurrent callers. Only the caller that wins the
+    // atomic claim ever reaches the channel; the loser is refused before it.
+    let sends = 0;
+    const countingChannel: OutreachChannel = {
+      name: "counting",
+      kind: "email",
+      dispatch: async (d, a) => {
+        sends++;
+        assertApproved(d, a);
+        return Outcome.parse({ id: newId("out"), refType: "draft", refId: d.id, result: "sent", ts: now });
+      },
+    };
+
+    // Genuinely concurrent (Promise.all, not two sequential awaits — the case the re-audit flagged
+    // the old sequential test as NOT covering). Exactly one must win the claim and send; the other
+    // must be refused WITHOUT calling the channel.
+    const results = await Promise.allSettled([
+      dispatchDraft(draft, approval, countingChannel, memory),
+      dispatchDraft(draft, approval, countingChannel, memory),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+    expect(sends).toBe(1); // the channel was called exactly once — NO double-send
+
+    const outcomeRows = await memory.query<{ c: number | bigint }>(
+      "SELECT COUNT(*) as c FROM outcomes WHERE ref_id = $refId",
+      { refId: draft.id },
+    );
+    expect(Number(outcomeRows[0]?.c ?? -1)).toBe(1); // exactly one Outcome
+    expect((await memory.getDraft(draft.id))?.status).toBe("dispatched");
+  });
+
+  it("HARDENING (#2): refuses to dispatch when the recorded Approval has NO content binding", async () => {
+    const draft = pendingDraft({ status: "approved" });
+    await memory.putDraft(draft);
+    // A real, hash-chained approval — but with NO contentHash (an old-style / unbound approval).
+    const approval = await memory.appendApproval({
+      id: "appr_nobind",
+      draftId: draft.id,
+      decision: "approve",
+      actor: "human",
+      ts: now,
+    });
+    expect(approval.contentHash).toBeUndefined();
+
+    let sends = 0;
+    const spyChannel: OutreachChannel = {
+      name: "spy",
+      kind: "email",
+      dispatch: async () => {
+        sends++;
+        throw new Error("should never be called");
+      },
+    };
+
+    await expect(dispatchDraft(draft, approval, spyChannel, memory)).rejects.toThrow(
+      /carries no content binding/,
+    );
+    expect(sends).toBe(0);
+    // refused with no side effect — the draft stays 'approved'.
+    expect((await memory.getDraft(draft.id))?.status).toBe("approved");
+  });
+
+  it("HARDENING (#2): mutating ANY dispatch-relevant draft field after approval is refused (not just body)", async () => {
+    const cbindDir = await mkdtemp(join(tmpdir(), "mstack-runtime-cbind2-"));
+    const store = new DraftStore(memory, cbindDir);
+    let sends = 0;
+    const spyChannel: OutreachChannel = {
+      name: "spy",
+      kind: "email",
+      dispatch: async () => {
+        sends++;
+        throw new Error("should never be called");
+      },
+    };
+    try {
+      const saved = await store.save(
+        pendingDraft({ id: "dr_cbind2", subject: "orig subject", body: "orig body", createdBy: "orig-author" }),
+      );
+      const approval = await store.approve(saved.id, "human");
+      expect(approval.contentHash).toBeDefined();
+
+      // Mutate a field the OLD 5-field hash did NOT cover — `createdBy` — leaving subject/body/etc.
+      // intact. The broadened binding (whole Draft minus status) must still catch it; a custom
+      // channel `mapDraft` could read `createdBy`, so it is dispatch-relevant.
+      const approved = await memory.getDraft(saved.id);
+      if (!approved) throw new Error("precondition: approved draft should be persisted");
+      await memory.putDraft({ ...approved, createdBy: "attacker-swapped-author" });
+
+      await expect(dispatchDraft(saved, approval, spyChannel, memory)).rejects.toThrow(
+        /content has changed since it was approved/,
+      );
+      expect(sends).toBe(0);
+      expect((await memory.getDraft(saved.id))?.status).toBe("approved");
+    } finally {
+      await rm(cbindDir, { recursive: true, force: true });
+    }
   });
 });
 
