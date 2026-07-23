@@ -294,6 +294,16 @@ describe("isUrlWithinBase (destination binding, finding #4)", () => {
     expect(isUrlWithinBase("https://api.example.com/v2", "https://api.example.com/v2")).toBe(true);
     expect(isUrlWithinBase("https://api.example.com/v2evil", "https://api.example.com/v2")).toBe(false);
   });
+  it("#4: fails closed on encoded path separators / dot-segments (%2f, %2e) -- downstream-decode escape", () => {
+    // These pass the raw segment-prefix test (WHATWG URL keeps them encoded) but a downstream
+    // proxy that percent-decodes would resolve them below the base -> must be refused.
+    expect(isUrlWithinBase("https://api.example.com/v2/%2F..%2Fadmin", "https://api.example.com/v2")).toBe(false);
+    expect(isUrlWithinBase("https://api.example.com/v2/%2e%2e/admin", "https://api.example.com/v2")).toBe(false);
+    expect(isUrlWithinBase("https://api.example.com/v2/%2fx", "https://api.example.com/v2")).toBe(false);
+    expect(isUrlWithinBase("https://api.example.com/v2/%2E%2E/x", "https://api.example.com/v2")).toBe(false); // uppercase
+    // a legit literal path with a dot in a filename (not %2e) is still allowed:
+    expect(isUrlWithinBase("https://api.example.com/v2/report.csv", "https://api.example.com/v2")).toBe(true);
+  });
   it("fails closed on unparseable input", () => {
     expect(isUrlWithinBase("not-a-url", "https://app.posthog.com")).toBe(false);
     expect(isUrlWithinBase("https://app.posthog.com/x", "not-a-url")).toBe(false);

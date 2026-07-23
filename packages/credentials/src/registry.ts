@@ -47,6 +47,12 @@ export class ProviderRegistry {
  * away on BOTH sides: `https://h` and `https://h:443` match; `https://h:8443` does not. A base at
  * the host root (e.g. `https://app.posthog.com`) admits any path on that host; a base carrying a
  * path (e.g. `https://api.example.com/v2`) admits only `/v2` and `/v2/...` (never `/v2evil`).
+ *
+ * Also fails CLOSED when the request path carries an ENCODED path separator or dot-segment
+ * (`%2f`/`%2e`, any case): WHATWG `URL` leaves those percent-encoded, so `/v2/%2F..%2Fadmin`
+ * would pass the segment-prefix test here, yet a downstream server/proxy that percent-decodes
+ * before routing would resolve it to `/admin` -- escaping the base. Since this predicate gates
+ * whether a secret may be injected toward `url`, an ambiguous encoded traversal is refused.
  */
 export function isUrlWithinBase(url: string, base: string): boolean {
   let u: URL;
@@ -57,6 +63,8 @@ export function isUrlWithinBase(url: string, base: string): boolean {
   } catch {
     return false;
   }
+  // Encoded slash / dot-segment in the REQUEST path (base is our own trusted config) -> fail closed.
+  if (/%2[ef]/i.test(u.pathname)) return false;
   if (u.protocol !== b.protocol) return false;
   if (u.host !== b.host) return false;
   const basePath = b.pathname.replace(/\/+$/, "");
