@@ -365,7 +365,18 @@ export function verifyDpopProof(proofJwt: string, options: DpopVerifyOptions): D
   if (payload.htm.toUpperCase() !== options.htm.toUpperCase()) {
     return { valid: false, reason: "htm mismatch" };
   }
-  if (normalizeHtu(payload.htu) !== normalizeHtu(options.htu)) {
+  // `normalizeHtu` parses via `new URL(...)`, which THROWS on a syntactically invalid URL. The
+  // proof (and thus `payload.htu`) is attacker-controlled -- it is self-signed under the JWK
+  // embedded in its own header -- so a crafted proof with a malformed `htu` would otherwise make
+  // this function throw, breaking its documented "never throws to the caller" contract. Wrap the
+  // comparison: a malformed htu is a rejection, not an exception.
+  let htuMatches: boolean;
+  try {
+    htuMatches = normalizeHtu(payload.htu) === normalizeHtu(options.htu);
+  } catch {
+    return { valid: false, reason: "malformed htu" };
+  }
+  if (!htuMatches) {
     return { valid: false, reason: "htu mismatch" };
   }
 

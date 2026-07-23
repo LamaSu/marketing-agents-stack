@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { sign as cryptoSign } from "node:crypto";
 import {
   generateDpopKeyPair,
   createDpopSigner,
@@ -203,6 +204,25 @@ describe("DPoP verify guards", () => {
     const tampered = `${parts[0]}.${parts[1]}.${"A".repeat((parts[2] ?? "").length)}`;
     expect(verifyDpopProof(tampered, { htm: "GET", htu: "https://h/x", now: FIXED_MS }).valid).toBe(false);
     expect(verifyDpopProof("not-a-jwt", { htm: "GET", htu: "https://h/x", now: FIXED_MS }).valid).toBe(false);
+  });
+
+  it("#9a: a valid-signature proof carrying a MALFORMED htu returns invalid -- never throws", () => {
+    // The signer normalizes htu at mint time, so a malformed htu can only arrive on a hand-crafted,
+    // self-signed proof (the attacker owns the JWK embedded in the header). It reaches the binding
+    // compare, where normalizeHtu(payload.htu) would `new URL(...)` -> throw. verifyDpopProof
+    // documents "never throws to the caller", so this must be a graceful rejection.
+    const kp = generateDpopKeyPair("EdDSA");
+    const b64u = (o: unknown): string => Buffer.from(JSON.stringify(o), "utf8").toString("base64url");
+    const header = { typ: "dpop+jwt", alg: "EdDSA", jwk: kp.publicJwk };
+    const payload = { htm: "GET", htu: "not-a-valid-url", iat: 1_700_000_000, jti: "malformed-htu-jti" };
+    const signingInput = `${b64u(header)}.${b64u(payload)}`;
+    const sig = cryptoSign(null, Buffer.from(signingInput, "utf8"), kp.privateKey).toString("base64url");
+    const proof = `${signingInput}.${sig}`;
+    expect(() => verifyDpopProof(proof, { htm: "GET", htu: "https://h/x", now: FIXED_MS })).not.toThrow();
+    expect(verifyDpopProof(proof, { htm: "GET", htu: "https://h/x", now: FIXED_MS })).toMatchObject({
+      valid: false,
+      reason: "malformed htu",
+    });
   });
 });
 
