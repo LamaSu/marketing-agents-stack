@@ -9,7 +9,7 @@
  * └───────────────────────────────────────────────────────────────────────────────┘
  * This notifier ONLY rings a bell ("a draft is pending, go approve it"). It NEVER
  * dispatches, NEVER writes an `Approval`, and NEVER collects/returns the human's
- * decision. The real record is still the signed, hash-chained `Approval` that
+ * decision. The real record is still the tamper-evident, hash-chained `Approval` that
  * `DraftStore#approve` / `#reject` writes (via `MemoryRepo#appendApproval`), and the
  * only send path is still the gated `dispatch.ts#dispatchDraft`. Both are untouched by
  * this file. "Draft-first + a human approves every send" stays exactly the mechanism;
@@ -131,7 +131,7 @@ export function defaultFormatMessage(draft: Draft): string {
     `- subject: ${subject}\n` +
     "\n" +
     "Approve or reject it in the mstack approvals portal/console. This message is a " +
-    "reminder only — the decision is recorded in the portal as a signed, hash-chained " +
+    "reminder only — the decision is recorded in the portal as a tamper-evident, hash-chained " +
     "approval, not by replying here."
   );
 }

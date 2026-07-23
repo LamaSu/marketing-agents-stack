@@ -1,8 +1,12 @@
 /**
- * dispatch.ts — the ONLY send path in this repo (research/06-architecture.md §3.3, §8
- * guardrail #2; docs/build-conventions.md guardrail #2).
+ * dispatch.ts — the only send path in this repo IN THE NORMAL FLOW (research/06-architecture.md
+ * §3.3, §8 guardrail #2; docs/build-conventions.md guardrail #2). "Only" is grep-guarded, not a
+ * sandbox: `dispatch.test.ts` asserts this package's production source has exactly one
+ * `OutreachChannel.dispatch` call site — this one — so no ACCIDENTAL second send path can slip in.
+ * It is NOT proof against a malicious in-process caller that imports a channel directly or holds a
+ * raw `MemoryRepo` handle; that code is trusted (see docs/what-could-be-better.md).
  *
- * MECHANICAL GUARDRAIL #2 ("a human approves every send"): `dispatchDraft` is the single
+ * GUARDRAIL #2 ("a human approves every send"): `dispatchDraft` is the single
  * function, in this package and in the whole repo, that is allowed to call
  * `OutreachChannel.dispatch`. It is authoritative from the SYSTEM OF RECORD in `memory` — it
  * never trusts the caller-supplied `Draft`/`Approval` objects' own fields. Before it touches the

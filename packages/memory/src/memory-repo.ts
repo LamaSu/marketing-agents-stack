@@ -10,10 +10,16 @@
  * needs. See research/06-architecture.md §2 (state-store split) and §1.2
  * (primitives).
  *
- * MECHANICAL GUARDRAIL #2/#3: `Approval` rows are additionally written to
+ * GUARDRAIL #2/#3 (tamper-EVIDENT audit): `Approval` rows are additionally written to
  * an append-only, hash-chained audit table (never updated in place) —
  * `appendApproval` computes `hash = sha256Hex(prevHash + canonical(rest))`
  * and `verifyAuditChain()` recomputes the whole chain to detect tampering.
+ * "Tamper-evident" is the honest claim: it DETECTS external edits or reorders of the
+ * rows it still holds. It is NOT a cryptographic signature (it does not prove WHO
+ * authorized a decision), NOT proof against in-process code that holds this `MemoryRepo`
+ * (or the raw `query()` escape hatch) rewriting a row and its forward hashes, and NOT able
+ * on its own to detect deletion of the NEWEST rows — see `verifyAuditChain`/`auditHead`
+ * for that last limitation and its external-anchor mitigation.
  *
  * SINGLE-WRITER DISCIPLINE: DuckDB is a single-writer embedded database.
  * This package's contract is *one shared `MemoryRepo` instance per

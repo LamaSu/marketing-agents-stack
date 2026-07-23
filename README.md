@@ -34,19 +34,25 @@ Both webinar demos are two halves of **one** loop — Saqib's Portal specializes
 brand-safe content governance; Guan's SignalSphere specializes it to account activation.
 They share the same primitives, memory, draft-first gate, and runtime.
 
-## Three guardrails — mechanical, not aspirational
+## Three guardrails — enforced structurally, not aspirational
 
-Each is enforced by the type system / a state machine, because the speakers learned them the hard way:
+Each is enforced structurally — a test, a state machine, a grep-guarded send path, a hash-chained
+ledger — in the normal flow. They are strong defaults, not a sandbox: in-process code that holds a
+`MemoryRepo` handle or the raw `query()` escape hatch is trusted (see `docs/what-could-be-better.md`).
 
 1. **Reviewer ≠ generator.** `ReviewResult` has *no field* for generated marketing prose; a
    finding's `recommendedChange` is a short instruction. Enforced by a test. *(Saqib: "it's a
    reviewer and a tracker, not a content generator.")*
-2. **A human approves every send.** No adapter exposes a direct-send method. A `Draft` reaches
-   `dispatched` only through `runtime/dispatch.ts` + a matching **approved** `Approval` row.
+2. **A human approves every send.** No adapter exposes a direct-send method; a `Draft` reaches
+   `dispatched` only through `runtime/dispatch.ts#dispatchDraft` + a matching **approved**,
+   hash-chained `Approval` row, and an atomic claim makes that transition win-once (no double-send).
+   That is the only send path *in the normal flow* — grep-guarded by a test asserting exactly one
+   channel call site — not a mechanical guarantee against a malicious in-process caller.
    *(Guan: "humans still stay in the loop before any message goes out.")*
 3. **Keep every record.** Every workflow writes to `@mstack/memory` ≥ twice (raw in,
-   decision/outcome out); the loop compounds. *(Guan's #1 lesson: "my AI is lying to me because
-   it didn't have the context.")*
+   decision/outcome out); the approval audit log is append-only and **tamper-evident** — hash-chained,
+   so edits or reorders of retained rows are detected (not a signature, not proof against in-process
+   rewrites). *(Guan's #1 lesson: "my AI is lying to me because it didn't have the context.")*
 
 ## Packages
 
