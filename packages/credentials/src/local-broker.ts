@@ -135,7 +135,16 @@ export class LocalBroker implements CredentialBroker {
       if (headers["content-type"] === undefined) headers["content-type"] = "application/json";
     }
 
-    const res = await this.#fetchImpl(url, { method: req.method, headers, body });
+    // #4 REDIRECT hardening: when a secret rides in a request HEADER, do NOT auto-follow redirects.
+    // The Fetch standard strips only `Authorization` across an origin change -- a custom secret
+    // header (X-Api-Key, X-Api-Token, ...) would otherwise ride a `302 Location: https://evil` to
+    // an UNVALIDATED host, leaking the key. In manual mode fetch returns the 3xx as-is and we hand
+    // it back to the caller WITHOUT following it, so the injected secret only ever reaches the
+    // in-base URL that #assertUrlWithinBase already validated. Unauthenticated calls keep the
+    // default (follow) behavior -> the offline `mstack demo` path is byte-for-byte unchanged.
+    const init: RequestInit = { method: req.method, headers, body };
+    if (injectsSecret) init.redirect = "manual";
+    const res = await this.#fetchImpl(url, init);
 
     const resHeaders: Record<string, string> = {};
     res.headers.forEach((value, key) => {

@@ -274,6 +274,72 @@ describe("LocalBroker.proxyCall", () => {
     expect(capturedUrl).toBe("https://cdn.example.com/pub");
     expect(res.status).toBe(200);
   });
+
+  it("#4: does NOT follow a redirect while a secret header is attached (secret never reaches the redirect target)", async () => {
+    const calls: Array<{ url: string; redirect: RequestInit["redirect"]; auth: string | undefined }> = [];
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const headers = (init?.headers as Record<string, string>) ?? {};
+      calls.push({ url: input.toString(), redirect: init?.redirect, auth: headers.Authorization });
+      // an in-base endpoint that 302s OFF-base (what redirect:"manual" surfaces in Node/undici):
+      return new Response("", { status: 302, headers: { location: "https://evil.example.com/steal" } });
+    };
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "posthog", keyNames: ["POSTHOG_API_KEY"], baseUrl: "https://app.posthog.com" });
+    const broker = new LocalBroker({ registry, env: { POSTHOG_API_KEY: SECRET }, fetchImpl, log: () => {} });
+
+    const res = await broker.proxyCall({
+      providerId: "posthog",
+      method: "GET",
+      url: "https://app.posthog.com/api/redirector",
+      authInject: { header: "Authorization" },
+    });
+
+    expect(calls).toHaveLength(1); // exactly ONE fetch -- the redirect was NOT followed
+    expect(calls[0]?.url).toBe("https://app.posthog.com/api/redirector");
+    expect(calls[0]?.redirect).toBe("manual"); // secret-bearing fetch opts out of auto-follow
+    expect(calls.every((c) => new URL(c.url).host === "app.posthog.com")).toBe(true); // never evil.example.com
+    expect(calls[0]?.auth).toBe(SECRET); // secret reached only the validated in-base URL
+    expect(res.status).toBe(302); // the 302 is handed back to the caller; the secret did not follow it
+    expect(res.headers.location).toBe("https://evil.example.com/steal");
+  });
+
+  it("#4: refuses an encoded-slash traversal URL (downstream-decode escape) -- secret never sent", async () => {
+    let fetched = false;
+    const fetchImpl: typeof fetch = async () => {
+      fetched = true;
+      return new Response("{}", { status: 200 });
+    };
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "api", keyNames: ["API_KEY"], baseUrl: "https://api.example.com/v2" });
+    const logs: BrokerLogEntry[] = [];
+    const broker = new LocalBroker({ registry, env: { API_KEY: SECRET }, fetchImpl, log: (e) => logs.push(e) });
+    await expect(
+      broker.proxyCall({
+        providerId: "api",
+        method: "GET",
+        url: "https://api.example.com/v2/%2F..%2Fadmin",
+        authInject: { header: "Authorization" },
+      }),
+    ).rejects.toThrow(/outside the registered base/i);
+    expect(fetched).toBe(false); // refused before any request went out
+    expect(JSON.stringify(logs)).not.toContain(SECRET);
+  });
+
+  it("#4: an unauthenticated call keeps default redirect behavior (no manual mode) -- demo path unchanged", async () => {
+    let fetched = false;
+    let capturedRedirect: RequestInit["redirect"];
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      fetched = true;
+      capturedRedirect = init?.redirect;
+      return new Response("{}", { status: 200 });
+    };
+    const registry = new ProviderRegistry();
+    registry.register({ providerId: "posthog", keyNames: ["POSTHOG_API_KEY"], baseUrl: "https://app.posthog.com" });
+    const broker = new LocalBroker({ registry, env: { POSTHOG_API_KEY: SECRET }, fetchImpl, log: () => {} });
+    await broker.proxyCall({ providerId: "posthog", method: "GET", url: "https://app.posthog.com/api/x" }); // no authInject
+    expect(fetched).toBe(true);
+    expect(capturedRedirect).toBeUndefined(); // no redirect override on the unauthenticated (demo) path
+  });
 });
 
 describe("isUrlWithinBase (destination binding, finding #4)", () => {
