@@ -15,6 +15,13 @@
  *  - `htu` is normalized to strip the query string (RFC 9449 §4.2), so even when `LocalBroker`
  *    query-injects a provider secret into the outbound URL, that secret can NEVER appear inside
  *    a DPoP proof. Binding is to scheme+host+path+method only.
+ *    CAVEAT (the flip side of that §4.2 rule): because `htu` EXCLUDES the query, the binding does
+ *    not cover query parameters. A money-affecting parameter (amount, recipient, idempotency key)
+ *    MUST NOT ride in the query string -- it would fall outside the proof and could be tampered
+ *    without breaking the binding. Carry such parameters in the signed request body or the path.
+ *  - Replay is rejected out of the box: `verifyDpopProof` consumes each proof's `jti` through an
+ *    atomic single-use `JtiStore` (default: a process-local store). A multi-process deployment
+ *    MUST supply a shared atomic store, or a proof accepted by one replica is replayable on another.
  *  - Everything is injectable (key, clock, jti) -> deterministic offline tests, no network.
  *
  * Supported algorithms: ES256 (ECDSA P-256, JWS raw r||s via `dsaEncoding:"ieee-p1363"`) and
@@ -187,6 +194,54 @@ export function createDpopSigner(keyPair: DpopKeyPair, options: DpopSignerOption
   };
 }
 
+// ---- replay protection (jti store) -----------------------------------------
+
+/**
+ * A single-use guard for DPoP `jti` values. `consume` is an ATOMIC check-and-record: it returns
+ * `true` the FIRST time it sees a `jti` (now recorded) and `false` on every later call for the
+ * same `jti` (a replay). This is what makes a captured-and-resent proof fail the second time even
+ * though its signature + binding are still valid -- replay is a property of the jti, not the bytes.
+ *
+ * The default (`createMemoryJtiStore`) is process-local. A MULTI-PROCESS / multi-replica deployment
+ * MUST supply a shared atomic store (e.g. Redis `SET jti <v> NX PX <ttl>`), or a proof accepted by
+ * one replica could be replayed against another. Supply it via `DpopVerifyOptions.jtiStore`.
+ */
+export interface JtiStore {
+  /** Atomically record `jti`. Returns true if it was NEW (accept), false if already seen (replay). */
+  consume(jti: string): boolean;
+}
+
+/**
+ * A process-local, bounded consuming `JtiStore` backed by a `Set` (insertion-ordered, so eviction
+ * is FIFO). `maxEntries` caps memory; because DPoP proofs are short-lived (verify enforces
+ * `maxAgeSeconds`, default 300s), an evicted jti is already outside the freshness window and cannot
+ * be replayed anyway -- keep `maxEntries` comfortably above peak in-window proof volume. Not shared
+ * across processes (see `JtiStore` doc).
+ */
+export function createMemoryJtiStore(options: { maxEntries?: number } = {}): JtiStore {
+  const maxEntries = options.maxEntries ?? 100_000;
+  const seen = new Set<string>();
+  return {
+    consume(jti: string): boolean {
+      if (seen.has(jti)) return false;
+      seen.add(jti);
+      if (seen.size > maxEntries) {
+        const oldest = seen.values().next().value; // FIFO: Set preserves insertion order
+        if (typeof oldest === "string") seen.delete(oldest);
+      }
+      return true;
+    },
+  };
+}
+
+/**
+ * The default store `verifyDpopProof` uses when no `jtiStore` is supplied -- so replay is rejected
+ * OUT OF THE BOX. It is a module-level singleton (process-wide): verifying the same proof twice in
+ * one process fails the second time, which is correct DPoP semantics (proofs are single-use; a
+ * legitimate retry needs a fresh proof). Supply your own `jtiStore` to scope or share replay state.
+ */
+const defaultJtiStore: JtiStore = createMemoryJtiStore();
+
 // ---- verification -----------------------------------------------------------
 
 export interface DpopVerifyOptions {
@@ -202,8 +257,12 @@ export interface DpopVerifyOptions {
   clockSkewSeconds?: number;
   /** if provided, the proof's `nonce` must equal this exactly. */
   nonce?: string;
-  /** optional replay guard: return true if this `jti` has already been seen. */
-  isReplay?: (jti: string) => boolean;
+  /**
+   * Consuming single-use replay store. Defaults to a process-local singleton, so replays are
+   * rejected out of the box; supply a shared atomic store for multi-process deployments (see
+   * `JtiStore`). `consume(jti)` returning false (a duplicate) makes verification fail `reason:"replay"`.
+   */
+  jtiStore?: JtiStore;
 }
 
 export type DpopVerifyResult =
@@ -316,7 +375,10 @@ export function verifyDpopProof(proofJwt: string, options: DpopVerifyOptions): D
   if (options.nonce !== undefined && payload.nonce !== options.nonce) {
     return { valid: false, reason: "nonce mismatch" };
   }
-  if (options.isReplay?.(payload.jti)) return { valid: false, reason: "replay: jti already used" };
+  // Replay is the LAST check: consume the jti only after EVERY other check has passed, so an
+  // attacker cannot burn or poison jtis by sending proofs that fail signature/binding/freshness.
+  const jtiStore = options.jtiStore ?? defaultJtiStore;
+  if (!jtiStore.consume(payload.jti)) return { valid: false, reason: "replay" };
 
   return { valid: true, jkt: jwkThumbprint(jwk), payload };
 }

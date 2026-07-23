@@ -3,6 +3,7 @@ import {
   generateDpopKeyPair,
   createDpopSigner,
   verifyDpopProof,
+  createMemoryJtiStore,
   normalizeHtu,
   LocalBroker,
   ProviderRegistry,
@@ -76,8 +77,10 @@ describe("DPoP proof uniqueness + determinism", () => {
     // deterministic without RFC 6979), so the full proofs differ — and each still
     // verifies. DPoP proofs are single-use anyway, so this is correct, not a defect.
     expect(a).not.toBe(b);
-    expect(verifyDpopProof(a, { htm: "GET", htu: "https://h/x", now: FIXED_MS }).valid).toBe(true);
-    expect(verifyDpopProof(b, { htm: "GET", htu: "https://h/x", now: FIXED_MS }).valid).toBe(true);
+    // Fresh per-verify stores: this test reuses jti "fixed" on purpose (to prove claim
+    // determinism), which the default consuming store would otherwise reject as a replay.
+    expect(verifyDpopProof(a, { htm: "GET", htu: "https://h/x", now: FIXED_MS, jtiStore: createMemoryJtiStore() }).valid).toBe(true);
+    expect(verifyDpopProof(b, { htm: "GET", htu: "https://h/x", now: FIXED_MS, jtiStore: createMemoryJtiStore() }).valid).toBe(true);
   });
 
   it("EdDSA proofs ARE fully deterministic for fixed key+clock+jti (RFC 8032 deterministic nonce)", () => {
@@ -96,7 +99,14 @@ describe.each(["ES256", "EdDSA"] as const)("DPoP verify (%s)", (alg) => {
   it("accepts a proof that matches method + url, and returns a stable jkt", () => {
     const signer = createDpopSigner(generateDpopKeyPair(alg), { clock: fixedClock, jti: () => "j" });
     const proof = signer.proof({ htm: "GET", htu: "https://api.example.com/v1/x" });
-    const res = verifyDpopProof(proof, { htm: "get", htu: "https://api.example.com/v1/x", now: FIXED_MS });
+    // fresh store: the ES256 and EdDSA runs both mint jti "j"; the default singleton would treat
+    // the second run as a replay. Scoping to a per-run store keeps this an acceptance test.
+    const res = verifyDpopProof(proof, {
+      htm: "get",
+      htu: "https://api.example.com/v1/x",
+      now: FIXED_MS,
+      jtiStore: createMemoryJtiStore(),
+    });
     expect(res.valid).toBe(true);
     if (res.valid) expect(res.jkt).toBe(signer.jkt); // verifier-derived jkt == signer's jkt
   });
@@ -145,12 +155,45 @@ describe("DPoP verify guards", () => {
     expect(bad).toMatchObject({ valid: false, reason: "nonce mismatch" });
   });
 
-  it("rejects a replayed jti via the isReplay guard", () => {
-    const signer = createDpopSigner(generateDpopKeyPair(), { clock: fixedClock, jti: () => "used-jti" });
+  it("#9: a proof verifies once, then a SECOND verification of the same proof is rejected as replay", () => {
+    const signer = createDpopSigner(generateDpopKeyPair(), { clock: fixedClock });
     const proof = signer.proof({ htm: "GET", htu: "https://h/x" });
-    const seen = new Set<string>(["used-jti"]);
-    const res = verifyDpopProof(proof, { htm: "GET", htu: "https://h/x", now: FIXED_MS, isReplay: (j) => seen.has(j) });
-    expect(res).toMatchObject({ valid: false, reason: "replay: jti already used" });
+    const store = createMemoryJtiStore();
+    const first = verifyDpopProof(proof, { htm: "GET", htu: "https://h/x", now: FIXED_MS, jtiStore: store });
+    expect(first.valid).toBe(true);
+    const second = verifyDpopProof(proof, { htm: "GET", htu: "https://h/x", now: FIXED_MS, jtiStore: store });
+    expect(second).toMatchObject({ valid: false, reason: "replay" });
+  });
+
+  it("#9: the DEFAULT store (no jtiStore supplied) rejects replays out of the box", () => {
+    // a unique jti so this test does not collide with any other test's default-store usage
+    const signer = createDpopSigner(generateDpopKeyPair(), { clock: fixedClock, jti: () => "default-store-replay-uniq" });
+    const proof = signer.proof({ htm: "GET", htu: "https://h/x" });
+    expect(verifyDpopProof(proof, { htm: "GET", htu: "https://h/x", now: FIXED_MS }).valid).toBe(true);
+    expect(verifyDpopProof(proof, { htm: "GET", htu: "https://h/x", now: FIXED_MS })).toMatchObject({
+      valid: false,
+      reason: "replay",
+    });
+  });
+
+  it("#9: an invalid proof does NOT consume its jti (store is not poisoned by junk)", () => {
+    const store = createMemoryJtiStore();
+    // a proof presented against the WRONG method fails binding before the replay check, so its
+    // jti must remain usable afterwards:
+    const bad = createDpopSigner(generateDpopKeyPair(), { clock: fixedClock, jti: () => "poison-test" }).proof({
+      htm: "GET",
+      htu: "https://h/x",
+    });
+    expect(verifyDpopProof(bad, { htm: "POST", htu: "https://h/x", now: FIXED_MS, jtiStore: store })).toMatchObject({
+      valid: false,
+      reason: "htm mismatch",
+    });
+    // same jti on a correctly-bound proof still succeeds (it was never consumed above):
+    const good = createDpopSigner(generateDpopKeyPair(), { clock: fixedClock, jti: () => "poison-test" }).proof({
+      htm: "GET",
+      htu: "https://h/x",
+    });
+    expect(verifyDpopProof(good, { htm: "GET", htu: "https://h/x", now: FIXED_MS, jtiStore: store }).valid).toBe(true);
   });
 
   it("rejects a tampered signature and malformed input, without throwing", () => {
